@@ -1,0 +1,10 @@
+{
+  "name": "Remix Remix Vaharai Beneficiary Assistance Management System",
+  "description": "Comprehensive beneficiary registry, assistance tracking, QR verification, reception desk, and division-based governance for Divisional Secretariat Vaharai.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

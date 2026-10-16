@@ -1,150 +1,172 @@
 import React, { useState } from 'react';
 import { User } from '../types';
-import { StorageService } from '../services/storageService';
-import { TRANSLATIONS, Language } from '../utils/translations';
-import { Lock, User as UserIcon, Eye, EyeOff, AlertCircle, Languages, Building, UserCheck } from 'lucide-react';
-import { AppLogo } from './AppLogo';
+import { Language, translations } from '../translations/i18n';
+import { VaharaiLogo } from './VaharaiLogo';
 
 interface LoginViewProps {
+  users: User[];
+  lang: Language;
+  setLang: (lang: Language) => void;
   onLoginSuccess: (user: User) => void;
-  currentLang: Language;
-  onToggleLang: () => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({
+  users,
+  lang,
+  setLang,
   onLoginSuccess,
-  currentLang,
-  onToggleLang
 }) => {
-  const t = TRANSLATIONS[currentLang];
-  const isTa = currentLang === 'ta';
-  const [userId, setUserId] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const t = translations[lang];
+
+  const [userIdInput, setUserIdInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setLoading(true);
-    setTimeout(() => {
-      const res = StorageService.login(userId, password);
-      setLoading(false);
-      if (res.success && res.user) {
-        onLoginSuccess(res.user);
-      } else {
-        setError(res.message || t.invalidCredentials);
-      }
-    }, 200);
-  };
+    setErrorMsg('');
 
-  const handleQuickLogin = (uid: string, pass: string) => {
-    setUserId(uid);
-    setPassword(pass);
-    const res = StorageService.login(uid, pass);
-    if (res.success && res.user) {
-      onLoginSuccess(res.user);
+    const trimmedId = userIdInput.trim();
+    const trimmedPw = passwordInput.trim();
+
+    const matched = users.find(
+      (u) => u.id === trimmedId && u.password === trimmedPw
+    );
+
+    if (matched) {
+      if (matched.status === 'INACTIVE') {
+        setErrorMsg(lang === 'ta' ? 'உங்கள் கணக்கு முடக்கப்பட்டுள்ளது. தலைமை நிர்வாகியை அணுகவும்.' : 'Your account is deactivated. Contact Super Administrator.');
+        return;
+      }
+      onLoginSuccess(matched);
+    } else {
+      setErrorMsg(t.invalidCredentials);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(16,185,129,0.15),rgba(255,255,255,0))]" />
+  const handleQuickDemoLogin = (user: User) => {
+    setUserIdInput(user.id);
+    setPasswordInput(user.password);
+    onLoginSuccess(user);
+  };
 
-      <div className="absolute top-6 right-6 z-20">
+  return (
+    <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4 relative overflow-hidden">
+      {/* Subtle Background Pattern */}
+      <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] opacity-40"></div>
+
+      {/* Language Switcher Top Right */}
+      <div className="absolute top-4 right-4 z-10">
         <button
-          onClick={onToggleLang}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-200 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-lg transition-colors shadow-xs cursor-pointer"
+          onClick={() => setLang(lang === 'ta' ? 'en' : 'ta')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-white text-xs border border-slate-700 transition-colors shadow-sm"
         >
-          <Languages className="w-3.5 h-3.5 text-emerald-400" />
-          <span>{currentLang === 'en' ? 'தமிழ்' : 'English'}</span>
+          <span>🌐</span>
+          <span>{lang === 'ta' ? 'English' : 'தமிழ்'}</span>
         </button>
       </div>
 
-      <div className="sm:mx-auto sm:w-full sm:max-w-md z-10 text-center px-4">
-        <AppLogo size="xl" className="mx-auto mb-4 ring-2 ring-emerald-500/50 shadow-2xl" />
-        <p className="text-xs font-bold tracking-widest text-emerald-400 uppercase">
-          {t.divisionSecretariat} • {t.district}
-        </p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-          {t.appTitle}
-        </h1>
-        <p className="mt-1 text-xs text-slate-400">
-          {t.subtitle}
-        </p>
-      </div>
-
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md z-10 px-4">
-        <div className="bg-slate-800/90 border border-slate-700/80 py-8 px-6 shadow-2xl rounded-2xl sm:px-10 backdrop-blur-md">
-          <form className="space-y-4" onSubmit={handleLogin}>
-            {error && (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-xs flex gap-2 items-center">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                <span>{error}</span>
-              </div>
-            )}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                {t.userId}
-              </label>
-              <div className="relative rounded-md shadow-2xs">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <UserIcon className="h-4 w-4" />
-                </div>
-                <input
-                  type="text"
-                  required
-                  autoFocus
-                  placeholder={t.enterUserId}
-                  value={userId}
-                  onChange={e => setUserId(e.target.value)}
-                  className="block w-full pl-9 pr-3 py-2 text-sm bg-slate-900/80 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                {t.password}
-              </label>
-              <div className="relative rounded-md shadow-2xs">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Lock className="h-4 w-4" />
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  placeholder={t.enterPassword}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  className="block w-full pl-9 pr-10 py-2 text-sm bg-slate-900/80 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-colors cursor-pointer"
-              >
-                {loading ? '...' : t.loginButton}
-              </button>
-            </div>
-          </form>
+      <div className="relative z-10 w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-6">
+        {/* Official Header Strip with Vaharai Logo */}
+        <div className="bg-emerald-950 p-6 text-white text-center border-b border-emerald-900">
+          <div className="w-16 h-16 mx-auto rounded-full bg-white p-1 border-2 border-amber-400 flex items-center justify-center shadow-lg mb-3">
+            <VaharaiLogo size={56} className="w-14 h-14" />
+          </div>
+          <div className="text-[11px] uppercase tracking-wider text-amber-300 font-bold">
+            {t.republicSriLanka}
+          </div>
+          <h1 className="text-base sm:text-lg font-black text-white mt-1 leading-snug">
+            {t.appTitle}
+          </h1>
+          <p className="text-xs text-emerald-200 mt-1 font-medium">
+            {t.batticaloaDistrict} · {t.portalShort}
+          </p>
         </div>
 
-        <p className="mt-4 text-center text-[11px] text-slate-500">
-          Official Government System • Democratic Socialist Republic of Sri Lanka
-        </p>
+        {/* Login Form */}
+        <div className="p-5 sm:p-6">
+          <div className="text-center mb-5">
+            <h2 className="text-base font-bold text-slate-900">{t.loginTitle}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{t.loginSubtitle}</p>
+          </div>
+
+          {errorMsg && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-semibold">
+              ⚠️ {errorMsg}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                {t.userId}
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. 789, 456, 457, 999, 123"
+                value={userIdInput}
+                onChange={(e) => setUserIdInput(e.target.value)}
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                {t.password} (பாஸ்வேட்)
+              </label>
+              <input
+                type="password"
+                required
+                placeholder="••••••"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-colors shadow-xs"
+            >
+              {t.login}
+            </button>
+          </form>
+
+          {/* Quick Demo Access Bar supporting Admin 1, Admin 2, Normal, Super Admin, GN, etc. */}
+          <div className="mt-6 pt-5 border-t border-slate-200">
+            <div className="text-[11px] font-bold text-slate-700 mb-2 flex items-center justify-between">
+              <span>{lang === 'ta' ? 'பயனர் ரோல் விரைவு தெரிவு (Demo Accounts):' : 'Select user role account:'}</span>
+              <span className="text-[10px] text-slate-400 font-mono">Password: 123</span>
+            </div>
+            <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+              {users.map((u) => {
+                let badgeColor = 'bg-slate-200 text-slate-800';
+                if (u.role === 'SUPERADMIN') badgeColor = 'bg-red-100 text-red-900 border border-red-200';
+                if (u.role === 'ADMIN 1') badgeColor = 'bg-purple-100 text-purple-900 border border-purple-200 font-bold';
+                if (u.role === 'ADMIN 2') badgeColor = 'bg-indigo-100 text-indigo-900 border border-indigo-200 font-bold';
+                if (u.role === 'NORMAL') badgeColor = 'bg-amber-300 text-slate-950 font-black border border-amber-400';
+                if (u.role === 'GRAMANIILATHARI') badgeColor = 'bg-emerald-100 text-emerald-900 border border-emerald-200';
+
+                return (
+                  <button
+                    key={u.id}
+                    onClick={() => handleQuickDemoLogin(u)}
+                    className="w-full p-2 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-lg text-left text-xs flex items-center justify-between transition-colors"
+                  >
+                    <div className="truncate pr-2">
+                      <div className="font-bold text-slate-900 truncate">{u.name}</div>
+                      <div className="text-[10px] text-slate-500 font-mono">ID: {u.id}</div>
+                    </div>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-semibold shrink-0 ${badgeColor}`}>
+                      {u.role}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

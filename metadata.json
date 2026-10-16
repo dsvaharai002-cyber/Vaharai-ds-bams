@@ -1,9 +1,7 @@
 {
-  "name": "Remix Remix Vaharai Beneficiary Assistance Management System",
-  "description": "Comprehensive beneficiary registry, assistance tracking, QR verification, reception desk, and division-based governance for Divisional Secretariat Vaharai.",
-  "requestFramePermissions": [
-    "camera"
-  ],
+  "name": "Remix Remix Koralaipattu North Vaharai DS Management System",
+  "description": "Bilingual Database and Public Service System for Koralaipattu North Vaharai Divisional Secretariat with RBAC, Barcode, Thermal Printer Tokens, and Google Drive Backup.",
+  "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

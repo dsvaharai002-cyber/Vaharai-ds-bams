@@ -1,284 +1,297 @@
 import React from 'react';
-import { User, Family, HighAssistanceFamily } from '../types';
-import { StorageService } from '../services/storageService';
-import { TRANSLATIONS, Language } from '../utils/translations';
-import { DashboardWidget } from './DashboardWidget';
-import { AppLogo } from './AppLogo';
-import {
-  Users,
-  Gift,
-  Home,
-  ListTodo,
-  TrendingUp,
-  Building,
-  QrCode,
-  ShieldAlert,
-  ArrowRight,
-  Plus,
-  UserCheck,
-  Sparkles
-} from 'lucide-react';
+import { Beneficiary, QueueToken, GNDivision, User, SystemAuditLog } from '../types';
+import { Language, translations } from '../translations/i18n';
+import { calculateAge } from '../services/storage';
 
 interface DashboardViewProps {
+  beneficiaries: Beneficiary[];
+  tokens: QueueToken[];
+  divisions: GNDivision[];
+  users: User[];
+  auditLogs: SystemAuditLog[];
   currentUser: User;
+  lang: Language;
   onNavigate: (tab: string) => void;
-  onSelectFamily: (family: Family) => void;
-  onOpenScanner: () => void;
-  currentLang: Language;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
+  beneficiaries,
+  tokens,
+  divisions,
+  users,
+  auditLogs,
   currentUser,
+  lang,
   onNavigate,
-  onSelectFamily,
-  onOpenScanner,
-  currentLang
 }) => {
-  const t = TRANSLATIONS[currentLang];
-  const isTa = currentLang === 'ta';
-  const isGnOfficer = currentUser.Role === 'GN Officer' || currentUser.Role === 'GN_Officer';
-  const { stats, highAssistance, divisionBreakdown } = StorageService.getDashboard(currentUser);
-  const families = StorageService.getFilteredFamilies(currentUser);
-  const assistanceList = StorageService.getFilteredAssistance(currentUser);
-  const totalAmountDisbursed = assistanceList.reduce((sum, a) => sum + (a.Amount || 0), 0);
-  const assistedPercent = stats.families > 0
-    ? Math.round((stats.assistedFamilies / stats.families) * 100)
-    : 0;
+  const t = translations[lang];
+
+  // If GN Officer, filter data relevant to their division
+  const isGN = currentUser.role === 'GRAMANIILATHARI';
+  const divisionCode = currentUser.division || '211';
+
+  const relevantBeneficiaries = isGN
+    ? beneficiaries.filter((b) => b.divisionCode === divisionCode)
+    : beneficiaries;
+
+  const relevantTokens = isGN
+    ? tokens.filter((tok) => tok.divisionCode === divisionCode)
+    : tokens;
+
+  // Key Counts
+  const totalCitizens = relevantBeneficiaries.length;
+  const totalFamilies = new Set(relevantBeneficiaries.map((b) => b.householdNo)).size;
+  const waitingTokensCount = relevantTokens.filter((tItem) => tItem.status === 'WAITING').length;
+  const aswesumaCount = relevantBeneficiaries.filter((b) => b.welfareScheme.startsWith('ASWESUMA')).length;
+  const samurdhiCount = relevantBeneficiaries.filter((b) => b.welfareScheme === 'SAMURDHI').length;
+  const chronicIllnessCount = relevantBeneficiaries.filter((b) => b.chronicIllness && b.chronicIllness !== 'NONE').length;
+  const youth16Count = relevantBeneficiaries.filter((b) => calculateAge(b.dob) === 16).length;
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner with Scoping */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-xl p-6 text-white shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <AppLogo size="lg" className="shrink-0 ring-2 ring-emerald-500/50" />
-            <div className="space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400">
-                {t.divisionSecretariat} • {t.district}
-              </span>
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-                {isGnOfficer
-                  ? (isTa ? `${currentUser.Division} கிராம சேவகர் பிரிவு` : `${currentUser.Division} GN Division`)
-                  : t.appTitle}
-              </h2>
-              <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-                {isGnOfficer
-                  ? (isTa
-                      ? `உங்கள் ${currentUser.Division} கிராம சேவகர் பிரிவின் குடும்பப் பதிவுகள், இடர்பாட்டு நிலை மற்றும் உதவி வழங்கல் விபரங்கள் மட்டுமே காண்பிக்கப்படுகின்றன.`
-                      : `Managing household vulnerability, aid distribution, and beneficiary records exclusively for ${currentUser.Division} GN Division.`)
-                  : t.subtitle}
-              </p>
-            </div>
+    <div className="space-y-6 w-full max-w-full overflow-x-hidden">
+      {/* Welcome Banner */}
+      <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-slate-900 rounded-xl p-5 sm:p-6 text-white shadow-md relative overflow-hidden">
+        <div className="relative z-10 max-w-2xl">
+          <div className="text-[10px] sm:text-xs uppercase tracking-wider text-amber-300 font-bold mb-1">
+            {lang === 'ta' ? 'அதிகாரப்பூர்வ நிர்வாக தளம்' : 'Official Administration Portal'}
           </div>
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
+            {t.appTitle}
+          </h1>
+          <p className="text-xs text-emerald-100 mt-1 leading-relaxed">
+            {t.appSubTitle}
+          </p>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              onClick={() => onNavigate('ai_report')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg shadow-xs transition-colors cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>{isTa ? 'ஏஐ முன்னுரிமை அறிக்கை (AI Report)' : 'AI Strategic Report'}</span>
-            </button>
-
-            <button
-              onClick={onOpenScanner}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-xs transition-colors cursor-pointer"
-            >
-              <QrCode className="w-4 h-4" />
-              <span>{t.verifyQR}</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate('registry')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>{t.registerFamily}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Role Scoping Notice */}
-      {isGnOfficer && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Building className="w-4 h-4 text-emerald-700 shrink-0" />
-            <span>
-              <strong>{t.divisionScopedNotice}</strong> {currentUser.Division}
+          <div className="flex items-center gap-2.5 mt-4 flex-wrap text-xs">
+            <span className="bg-emerald-950/70 border border-emerald-700/60 px-3 py-1 rounded-lg">
+              👤 {t.loggedAs}: <strong className="font-semibold text-white">{currentUser.name}</strong>
             </span>
+            <span className="bg-emerald-950/70 border border-emerald-700/60 px-3 py-1 rounded-lg">
+              🛡️ {t.role}: <strong className="font-mono text-amber-300">{currentUser.role}</strong>
+            </span>
+            {isGN && (
+              <span className="bg-amber-400 text-slate-950 px-2.5 py-1 rounded-lg font-bold font-mono">
+                GN {divisionCode}
+              </span>
+            )}
           </div>
-          <span className="text-[10px] font-mono font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded">
-            {currentUser.Name}
-          </span>
-        </div>
-      )}
-
-      {/* Primary KPI Metric Cards (Strictly Scoped by Division) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {/* Total Families */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-medium">{t.totalFamilies}</span>
-            <Home className="w-4 h-4 text-slate-400" />
-          </div>
-          <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
-            {stats.families}
-          </div>
-          <span className="text-[11px] text-slate-500 mt-1 block">
-            {isTa ? 'பதிவுசெய்த குடும்பங்கள்' : 'Registered in Registry'}
-          </span>
-        </div>
-
-        {/* Total Beneficiaries */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-medium">{t.totalMembers}</span>
-            <Users className="w-4 h-4 text-slate-400" />
-          </div>
-          <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
-            {stats.members}
-          </div>
-          <span className="text-[11px] text-slate-500 mt-1 block">{t.individualsLogged}</span>
-        </div>
-
-        {/* Assisted Families */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-medium">{t.assistedFamilies}</span>
-            <Gift className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="text-2xl font-bold text-emerald-700 font-mono tabular-nums">
-            {stats.assistedFamilies}
-          </div>
-          <span className="text-[11px] text-emerald-600 mt-1 block font-mono">
-            {assistedPercent}% {t.covered}
-          </span>
-        </div>
-
-        {/* Unassisted Families */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-medium">{t.unassistedFamilies}</span>
-            <TrendingUp className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="text-2xl font-bold text-amber-700 font-mono tabular-nums">
-            {stats.unassistedFamilies}
-          </div>
-          <span className="text-[11px] text-amber-700 mt-1 block">{t.priorityTargetPool}</span>
-        </div>
-
-        {/* Total Aid Disbursements */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-medium">{t.totalAssistance}</span>
-            <Gift className="w-4 h-4 text-blue-600" />
-          </div>
-          <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
-            {stats.assistanceRecords}
-          </div>
-          <span className="text-[11px] text-slate-500 mt-1 block font-mono">
-            LKR {(totalAmountDisbursed / 1000).toFixed(0)}k {t.totalDisbursed}
-          </span>
-        </div>
-
-        {/* Open Needs */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-medium">{t.openNeeds}</span>
-            <ListTodo className="w-4 h-4 text-rose-600" />
-          </div>
-          <div className="text-2xl font-bold text-rose-700 font-mono tabular-nums">
-            {stats.needs}
-          </div>
-          <span className="text-[11px] text-rose-600 mt-1 block">{t.awaitingPrograms}</span>
         </div>
       </div>
 
-      {/* Village Assistance Distribution Chart Widget */}
-      <DashboardWidget
-        currentUser={currentUser}
-        currentLang={currentLang}
-        onSelectFamily={onSelectFamily}
-        onNavigate={onNavigate}
-      />
-
-      {/* Repeated Assistance Alert Section */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-amber-600" />
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">{t.repeatedAlertTitle}</h3>
-              <p className="text-xs text-slate-500">{t.repeatedAlertDesc}</p>
-            </div>
+      {/* Metrics Grid (Responsive 2x3 or 3x2) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* Total Citizens */}
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs">
+            <span className="truncate">{t.totalBeneficiaries}</span>
+            <span>👥</span>
           </div>
-          <span className="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-md font-mono">
-            {highAssistance.length} {isTa ? 'குடும்பங்கள்' : 'Household(s)'}
-          </span>
+          <div className="mt-1.5 text-2xl font-bold font-mono text-slate-900 tabular-nums">
+            {totalCitizens}
+          </div>
+          <div className="mt-0.5 text-[10px] text-slate-400">
+            {isGN ? `GN Div ${divisionCode}` : 'All 16 Divs'}
+          </div>
         </div>
 
-        {highAssistance.length === 0 ? (
-          <div className="p-6 text-center text-slate-400 text-xs">
-            {isTa
-              ? 'எந்தக் குடும்பமும் 3 அல்லது அதற்கு மேற்பட்ட முறை உதவி பெறவில்லை.'
-              : 'No families currently have 3 or more assistance records. Aid distribution is balanced.'}
+        {/* Total Households */}
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs">
+            <span className="truncate">{t.totalFamilies}</span>
+            <span>🏡</span>
           </div>
-        ) : (
-          <div className="border border-slate-200 rounded-lg overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+          <div className="mt-1.5 text-2xl font-bold font-mono text-slate-900 tabular-nums">
+            {totalFamilies}
+          </div>
+          <div className="mt-0.5 text-[10px] text-slate-400">
+            {lang === 'ta' ? 'பதிவான குடும்பங்கள்' : 'Households'}
+          </div>
+        </div>
+
+        {/* Waiting Queue Today */}
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs">
+            <span className="truncate">{t.waitingQueue}</span>
+            <span>⏱️</span>
+          </div>
+          <div className="mt-1.5 text-2xl font-bold font-mono text-amber-600 tabular-nums">
+            {waitingTokensCount}
+          </div>
+          <div className="mt-0.5 text-[10px] text-slate-400">
+            {lang === 'ta' ? 'வரிசையில்' : 'Waiting in Queue'}
+          </div>
+        </div>
+
+        {/* Welfare Beneficiaries */}
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs">
+            <span className="truncate">அஸ்வெசும / சமுர்த்தி</span>
+            <span>🌾</span>
+          </div>
+          <div className="mt-1.5 text-2xl font-bold font-mono text-emerald-800 tabular-nums">
+            {aswesumaCount + samurdhiCount}
+          </div>
+          <div className="mt-0.5 text-[10px] text-slate-400">
+            {aswesumaCount} Asw · {samurdhiCount} Sam
+          </div>
+        </div>
+
+        {/* Chronic Illness Cases (NEW) */}
+        <div className="bg-white border border-red-200 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-red-700 text-xs font-semibold">
+            <span className="truncate">நாள்பட்ட நோய்கள்</span>
+            <span>🏥</span>
+          </div>
+          <div className="mt-1.5 text-2xl font-bold font-mono text-red-700 tabular-nums">
+            {chronicIllnessCount}
+          </div>
+          <div className="mt-0.5 text-[10px] text-slate-400">
+            {lang === 'ta' ? 'CKD, புற்றுநோய், ஊனம்' : 'CKD, Cancer, Disability'}
+          </div>
+        </div>
+
+        {/* 16-Year-Old Youth (NIC Applications) (NEW) */}
+        <div className="bg-white border border-amber-300 bg-amber-50/30 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-amber-900 text-xs font-semibold">
+            <span className="truncate">16 வயது (NIC)</span>
+            <span>🎯</span>
+          </div>
+          <div className="mt-1.5 text-2xl font-bold font-mono text-slate-900 tabular-nums">
+            {youth16Count}
+          </div>
+          <div className="mt-0.5 text-[10px] text-amber-800 font-medium">
+            {lang === 'ta' ? 'அடையாள அட்டை தேவை' : 'NIC Required'}
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Action Shortcuts */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+        <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+          {lang === 'ta' ? 'விரைவுச் செயல்பாடுகள்' : 'Quick Actions'}
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <button
+            onClick={() => onNavigate('beneficiaries')}
+            className="p-3 bg-slate-50 hover:bg-emerald-50 text-slate-800 hover:text-emerald-950 border border-slate-200 hover:border-emerald-300 rounded-xl text-left transition-colors"
+          >
+            <div className="text-xl mb-1">➕</div>
+            <div className="text-xs font-bold">{t.addBeneficiary}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">{lang === 'ta' ? 'தானியங்கி ID & பார்கோட்' : 'System ID & Barcode'}</div>
+          </button>
+
+          <button
+            onClick={() => onNavigate('reception')}
+            className="p-3 bg-slate-50 hover:bg-emerald-50 text-slate-800 hover:text-emerald-950 border border-slate-200 hover:border-emerald-300 rounded-xl text-left transition-colors"
+          >
+            <div className="text-xl mb-1">🖨️</div>
+            <div className="text-xs font-bold">{t.issueNewToken}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">{lang === 'ta' ? 'தர்மல் ரசீது அச்சிடல்' : 'Thermal Print 58/80mm'}</div>
+          </button>
+
+          <button
+            onClick={() => onNavigate('ai-report')}
+            className="p-3 bg-amber-50/70 hover:bg-amber-100/80 text-amber-950 border border-amber-200 hover:border-amber-300 rounded-xl text-left transition-colors"
+          >
+            <div className="text-xl mb-1">✨</div>
+            <div className="text-xs font-bold">{t.navAiReport}</div>
+            <div className="text-[10px] text-amber-800 mt-0.5">{lang === 'ta' ? 'தேவைகள் பகுப்பாய்வு' : 'AI Needs Assessment'}</div>
+          </button>
+
+          <button
+            onClick={() => onNavigate('drive')}
+            className="p-3 bg-slate-50 hover:bg-emerald-50 text-slate-800 hover:text-emerald-950 border border-slate-200 hover:border-emerald-300 rounded-xl text-left transition-colors"
+          >
+            <div className="text-xl mb-1">☁️</div>
+            <div className="text-xs font-bold">{t.navDrive}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">{lang === 'ta' ? 'மேமிப்பகம் & மீட்டல்' : 'Cloud Sync'}</div>
+          </button>
+        </div>
+      </div>
+
+      {/* Two Column Section: 16 GN Divisions & Live Audit */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left: 16 GN Divisions of Vaharai */}
+        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+          <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              {lang === 'ta' ? 'வாகரை 16 கிராம அலுவலர் பிரிவுகள்' : '16 GN Divisions of Vaharai'}
+            </h3>
+            <span className="text-[11px] text-slate-500 font-mono">16 Divisions</span>
+          </div>
+
+          <div className="w-full overflow-x-auto max-h-80 overflow-y-auto">
+            <table className="w-full min-w-[500px] text-left text-xs text-slate-700">
+              <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200 uppercase text-[10px]">
                 <tr>
-                  <th className="px-3.5 py-2.5 font-mono">{t.qrNumber}</th>
-                  <th className="px-3.5 py-2.5">{t.familyName}</th>
-                  <th className="px-3.5 py-2.5">{t.division}</th>
-                  <th className="px-3.5 py-2.5 text-center font-mono">{isTa ? 'உதவி எண்ணிக்கை' : 'Assistance Count'}</th>
-                  <th className="px-3.5 py-2.5 text-right font-mono">{isTa ? 'மொத்த உதவித் தொகை (LKR)' : 'Total Received (LKR)'}</th>
-                  <th className="px-3.5 py-2.5 font-mono">{isTa ? 'கடைசி திகதி' : 'Last Date'}</th>
-                  <th className="px-3.5 py-2.5 text-right">{t.actions}</th>
+                  <th className="py-2.5 px-3">குறியீடு / Code</th>
+                  <th className="py-2.5 px-3">பிரிவுப் பெயர் / Name</th>
+                  <th className="py-2.5 px-3">கிராம அலுவலர் / Officer</th>
+                  <th className="py-2.5 px-3 text-right">பிரஜைகள் / Citizens</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
-                {highAssistance.map((row: HighAssistanceFamily) => (
-                  <tr key={row.QR_Number} className="hover:bg-slate-50/80">
-                    <td className="px-3.5 py-2.5 font-mono font-bold text-slate-900">
-                      {row.QR_Number}
-                    </td>
-                    <td className="px-3.5 py-2.5 font-semibold text-slate-900">
-                      {row.Family_Name}
-                    </td>
-                    <td className="px-3.5 py-2.5 text-slate-700">
-                      {row.Division_Name}
-                    </td>
-                    <td className="px-3.5 py-2.5 text-center">
-                      <span className="px-2 py-0.5 font-mono font-bold text-xs bg-amber-100 text-amber-900 rounded">
-                        {row.Assistance_Count} {isTa ? 'முறை' : 'times'}
-                      </span>
-                    </td>
-                    <td className="px-3.5 py-2.5 text-right font-mono font-bold text-slate-900">
-                      LKR {row.Total_Amount.toLocaleString()}
-                    </td>
-                    <td className="px-3.5 py-2.5 font-mono text-slate-600">
-                      {row.Last_Assistance_Date || '-'}
-                    </td>
-                    <td className="px-3.5 py-2.5 text-right">
-                      <button
-                        onClick={() => {
-                          const fam = families.find(f => f.QR_Number.toUpperCase() === row.QR_Number.toUpperCase());
-                          if (fam) onSelectFamily(fam);
-                        }}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-slate-800 hover:text-emerald-700 underline cursor-pointer"
-                      >
-                        <span>{t.auditHistory}</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-slate-100">
+                {divisions.map((d) => {
+                  const divCitizens = beneficiaries.filter((b) => b.divisionCode === d.code).length;
+                  const isCurrentOfficerDiv = isGN && divisionCode === d.code;
+                  return (
+                    <tr
+                      key={d.code}
+                      className={`hover:bg-slate-50 ${isCurrentOfficerDiv ? 'bg-emerald-50/70 font-semibold' : ''}`}
+                    >
+                      <td className="py-2 px-3 font-mono font-bold text-slate-900">
+                        {d.code}
+                        {isCurrentOfficerDiv && (
+                          <span className="ml-1.5 text-[9px] bg-emerald-200 text-emerald-900 px-1 py-0.2 rounded font-sans">
+                            {lang === 'ta' ? 'உங்கள் பிரிவு' : 'Your Div'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3">
+                        <span className="font-semibold text-slate-900">{d.nameTa}</span>
+                        <span className="text-[11px] text-slate-500 ml-1.5">({d.nameEn})</span>
+                      </td>
+                      <td className="py-2 px-3 text-slate-600">{d.gnOfficerName || '-'}</td>
+                      <td className="py-2 px-3 text-right font-mono font-bold tabular-nums text-emerald-800">
+                        {divCitizens}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        )}
+        </div>
+
+        {/* Right: Audit Log / System Activity */}
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs flex flex-col">
+          <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              {t.navAudit}
+            </h3>
+            <span className="text-[11px] text-slate-500 font-mono">Live</span>
+          </div>
+
+          <div className="p-4 space-y-3 flex-1 overflow-y-auto max-h-80 text-xs">
+            {auditLogs.length === 0 ? (
+              <div className="text-center text-slate-400 py-8">
+                {lang === 'ta' ? 'தணிக்கைப் பதிவுகள் எதுவும் இல்லை' : 'No recent system events.'}
+              </div>
+            ) : (
+              auditLogs.slice(0, 10).map((log) => (
+                <div key={log.id} className="pb-2.5 border-b border-slate-100 last:border-0">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                    <span>{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="font-semibold text-slate-600">{log.userName}</span>
+                  </div>
+                  <div className="text-slate-800 font-medium mt-0.5 leading-snug">
+                    {log.details}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,370 +1,302 @@
 import React, { useState, useEffect } from 'react';
-import { User, Family } from './types';
-import { StorageService } from './services/storageService';
+import { User, Beneficiary, QueueToken, GNDivision, SystemAuditLog } from './types';
+import { Language } from './translations/i18n';
+import {
+  loadUsers,
+  saveUsers,
+  loadBeneficiaries,
+  saveBeneficiaries,
+  loadTokens,
+  saveTokens,
+  loadDivisions,
+  loadAuditLogs,
+  logAuditAction,
+} from './services/storage';
+import { getActiveUserSession, setActiveUserSession } from './services/auth';
 import { Header } from './components/Header';
-import { DashboardView } from './components/DashboardView';
-import { FamilyRegistryView } from './components/FamilyRegistryView';
-import { AssistanceDeliveryView } from './components/AssistanceDeliveryView';
-import { NeedsAssessmentView } from './components/NeedsAssessmentView';
-import { QrRequestsView } from './components/QrRequestsView';
-import { ProgramsAndUsersView } from './components/ProgramsAndUsersView';
-import { AuditLogView } from './components/AuditLogView';
-import { GoogleSheetsSyncView } from './components/GoogleSheetsSyncView';
-import { ElderlyRegistryView } from './components/ElderlyRegistryView';
-import { DisabilityRegistryView } from './components/DisabilityRegistryView';
-import { ReceptionView } from './components/ReceptionView';
-import { QrScannerModal } from './components/QrScannerModal';
-import { FamilyDetailModal } from './components/FamilyDetailModal';
 import { LoginView } from './components/LoginView';
-import { AIStrategicReportView } from './components/AIStrategicReportView';
-import { TRANSLATIONS, Language } from './utils/translations';
+import { DashboardView } from './components/DashboardView';
+import { BeneficiariesView } from './components/BeneficiariesView';
+import { ReceptionTokenView } from './components/ReceptionTokenView';
+import { LiveCounterDisplayView } from './components/LiveCounterDisplayView';
+import { StaffManagementView } from './components/StaffManagementView';
+import { CsvManagementView } from './components/CsvManagementView';
+import { DriveBackupView } from './components/DriveBackupView';
+import { AiReportView } from './components/AiReportView';
+import { BarcodeScannerModal } from './components/BarcodeScannerModal';
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const session = StorageService.getCurrentSession();
-    return session?.user || null;
-  });
+  // Authentication & Session
+  const [currentUser, setCurrentUser] = useState<User | null>(() => getActiveUserSession());
+  const [lang, setLang] = useState<Language>('ta');
+  const [currentTab, setCurrentTab] = useState<string>('dashboard');
 
-  const [activeTab, setActiveTab] = useState<string>(() => {
-    const session = StorageService.getCurrentSession();
-    return session?.user?.Role === 'Receptionist' ? 'reception' : 'dashboard';
-  });
+  // Persistent Databases
+  const [users, setUsers] = useState<User[]>(() => loadUsers());
+  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>(() => loadBeneficiaries());
+  const [tokens, setTokens] = useState<QueueToken[]>(() => loadTokens());
+  const [divisions, setDivisions] = useState<GNDivision[]>(() => loadDivisions());
+  const [auditLogs, setAuditLogs] = useState<SystemAuditLog[]>(() => loadAuditLogs());
 
-  const [currentLang, setCurrentLang] = useState<Language>(() => {
-    return (localStorage.getItem('vaharai_lang') as Language) || 'ta'; // Default to Tamil as primary local language
-  });
+  // Quick Barcode Scanner Modal
+  const [showScanner, setShowScanner] = useState<boolean>(false);
 
-  // Global modals
-  const [showScanner, setShowScanner] = useState(false);
-  const [inspectedFamily, setInspectedFamily] = useState<Family | null>(null);
-  const [assistancePreselectedFamily, setAssistancePreselectedFamily] = useState<Family | null>(null);
-  const [transferRequestParams, setTransferRequestParams] = useState<{ oldNIC: string; qrNumber: string } | null>(null);
-
-  // Google Sheets Cloud Sync Status
-  const [loadingCloud, setLoadingCloud] = useState(false);
-  const [cloudMessage, setCloudMessage] = useState(
-    currentLang === 'ta'
-      ? 'Google Sheets நேரலை இணைப்பு தயார் நிலையில் உள்ளது.'
-      : 'Google Sheets Cloud synchronization active.'
-  );
-
-  // Cloud Sync on App Mount
+  // Auto-login to Super Admin (User 789) if no active session for instant testing
   useEffect(() => {
-    let mounted = true;
-    const loadCloud = async () => {
-      setLoadingCloud(true);
-      try {
-        const result = await StorageService.syncFromCloud();
-        if (!mounted) return;
-        if (result.synced) {
-          setCloudMessage(
-            currentLang === 'ta'
-              ? 'Google Sheets நேரலைத் தரவுத்தளம் வெற்றிகரமாக இணைக்கப்பட்டது.'
-              : 'Google Sheets cloud database synced successfully.'
-          );
-        } else {
-          setCloudMessage(
-            currentLang === 'ta'
-              ? 'Google Sheets நேரலை கிளவுட் இணைப்பு தயார் நிலையில் உள்ளது (LocalStorage நீக்கப்பட்டது).'
-              : 'Google Sheets Direct Cloud Mode active (LocalStorage disabled).'
-          );
+    const session = getActiveUserSession();
+    if (session) {
+      const found = users.find((u) => u.id === session.id);
+      if (found) {
+        setCurrentUser(found);
+        if (found.role === 'Reception Registrar') {
+          setCurrentTab('reception');
+        } else if (found.role === 'NORMAL') {
+          setCurrentTab('live-display');
         }
-      } catch {
-        if (!mounted) return;
-        setCloudMessage(
-          currentLang === 'ta'
-            ? 'Google Sheets நேரலை கிளவுட் இணைப்பு தயார் நிலையில் உள்ளது.'
-            : 'Google Sheets Direct Cloud Mode active.'
-        );
-      } finally {
-        if (mounted) setLoadingCloud(false);
-      }
-    };
-    loadCloud();
-    return () => {
-      mounted = false;
-    };
-  }, [currentLang]);
-
-  // Requirement #1: Receptionist can ONLY view reception information!
-  useEffect(() => {
-    if (!currentUser) return;
-    if (currentUser.Role === 'Receptionist') {
-      if (activeTab !== 'reception') {
-        setActiveTab('reception');
       }
     } else {
-      if (activeTab === 'governance' && currentUser.Role !== 'Super_Admin' && currentUser.Role !== 'Super Admin') {
-        setActiveTab('dashboard');
-      }
-      if (activeTab === 'assistance' && currentUser.Role === 'Auditor') {
-        setActiveTab('dashboard');
+      const defaultSuperAdmin = users.find((u) => u.id === '789') || users[0];
+      if (defaultSuperAdmin) {
+        setCurrentUser(defaultSuperAdmin);
+        setActiveUserSession(defaultSuperAdmin);
       }
     }
-  }, [currentUser, activeTab]);
+  }, []);
 
-  const handleManualSync = async () => {
-    setLoadingCloud(true);
-    setCloudMessage(
-      currentLang === 'ta'
-        ? 'Google Sheets உடன் இணைக்கப்படுகிறது...'
-        : 'Connecting and syncing with Google Sheets...'
-    );
-    try {
-      const result = await StorageService.syncFromCloud();
-      setCloudMessage(
-        result.synced
-          ? (currentLang === 'ta' ? 'Google Sheets நேரலைத் தரவுத்தளம் இணைக்கப்பட்டது!' : 'Google Sheets cloud database synced successfully.')
-          : (currentLang === 'ta' ? 'உள்ளக சேமிப்பகம் புதுப்பிக்கப்பட்டது.' : 'Local database up to date.')
-      );
-    } catch {
-      setCloudMessage(
-        currentLang === 'ta'
-          ? 'உள்ளக சேமிப்பக முறை இயங்குகிறது.'
-          : 'Operating in offline local cache mode (fetch failed).'
-      );
-    } finally {
-      setLoadingCloud(false);
+  const handleLoginSuccess = (user: User) => {
+    setCurrentUser(user);
+    setActiveUserSession(user);
+    if (user.role === 'Reception Registrar') {
+      setCurrentTab('reception');
+    } else if (user.role === 'NORMAL') {
+      setCurrentTab('live-display');
+    } else {
+      setCurrentTab('dashboard');
     }
-  };
-
-  const handleToggleLang = () => {
-    setCurrentLang(prev => {
-      const next = prev === 'en' ? 'ta' : 'en';
-      localStorage.setItem('vaharai_lang', next);
-      return next;
-    });
+    logAuditAction(user.id, user.name, 'USER_LOGIN', `Logged in with role: ${user.role}`);
+    setAuditLogs(loadAuditLogs());
   };
 
   const handleLogout = () => {
-    StorageService.logout();
+    if (currentUser) {
+      logAuditAction(currentUser.id, currentUser.name, 'USER_LOGOUT', 'Logged out');
+    }
     setCurrentUser(null);
+    setActiveUserSession(null);
+    setAuditLogs(loadAuditLogs());
   };
 
-  const handleSelectFamilyFromAnywhere = (family: Family) => {
-    setInspectedFamily(family);
+  const handleAuditLog = (action: string, details: string) => {
+    if (currentUser) {
+      logAuditAction(currentUser.id, currentUser.name, action, details);
+      setAuditLogs(loadAuditLogs());
+    }
   };
 
-  const handleRecordAssistanceForFamily = (family: Family) => {
-    if (currentUser?.Role === 'Receptionist') return;
-    setAssistancePreselectedFamily(family);
-    setActiveTab('assistance');
+  const handleUpdateUsers = (newUsers: User[]) => {
+    setUsers(newUsers);
+    saveUsers(newUsers);
+    if (currentUser) {
+      const updatedSelf = newUsers.find((u) => u.id === currentUser.id);
+      if (updatedSelf) {
+        setCurrentUser(updatedSelf);
+        setActiveUserSession(updatedSelf);
+      }
+    }
   };
 
-  const handleRequestTransferForMember = (oldNIC: string, qrNumber: string) => {
-    if (currentUser?.Role === 'Receptionist') return;
-    setTransferRequestParams({ oldNIC, qrNumber });
-    setActiveTab('requests');
+  const handleUpdateBeneficiaries = (newItems: Beneficiary[]) => {
+    setBeneficiaries(newItems);
+    saveBeneficiaries(newItems);
   };
 
-  // If user is not logged in, show the login view
+  const handleUpdateTokens = (newTokens: QueueToken[]) => {
+    setTokens(newTokens);
+    saveTokens(newTokens);
+  };
+
+  const handleDatabaseReload = () => {
+    setUsers(loadUsers());
+    setBeneficiaries(loadBeneficiaries());
+    setTokens(loadTokens());
+    setDivisions(loadDivisions());
+    setAuditLogs(loadAuditLogs());
+  };
+
+  // If user signed out, show official login screen
   if (!currentUser) {
     return (
       <LoginView
-        currentLang={currentLang}
-        onToggleLang={handleToggleLang}
-        onLoginSuccess={(user) => {
-          setCurrentUser(user);
-          setActiveTab(user.Role === 'Receptionist' ? 'reception' : 'dashboard');
-        }}
+        users={users}
+        lang={lang}
+        setLang={setLang}
+        onLoginSuccess={handleLoginSuccess}
       />
     );
   }
 
-  const isReceptionist = currentUser.Role === 'Receptionist';
+  // Safety checks for Role-based Tab Access
+  const isSuperAdmin = currentUser.role === 'SUPERADMIN';
+  const isAdmin = currentUser.role === 'ADMIN 1' || currentUser.role === 'ADMIN 2' || isSuperAdmin;
+  const isReception = currentUser.role === 'Reception Registrar';
+  const isNormal = currentUser.role === 'NORMAL'; // Dedicated Live Counter TV user
+
+  const safeTab = 
+    isNormal
+      ? 'live-display'
+      : currentTab === 'staff' && !isSuperAdmin
+      ? 'dashboard'
+      : currentTab === 'beneficiaries' && isReception
+      ? 'reception'
+      : currentTab === 'drive' && !isAdmin
+      ? 'dashboard'
+      : currentTab === 'ai-report' && !isAdmin
+      ? 'dashboard'
+      : currentTab;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900">
-      {/* Top Header with Responsive Condensed Submenus */}
+    <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans w-full max-w-full overflow-x-hidden">
+      {/* 3-Zone Header */}
       <Header
         currentUser={currentUser}
-        activeTab={activeTab}
-        onNavigate={tab => {
-          // If receptionist, restrict strictly to reception (Requirement #1)
-          if (currentUser.Role === 'Receptionist') {
-            setActiveTab('reception');
-          } else {
-            setActiveTab(tab);
-          }
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
+        currentTab={safeTab}
+        setCurrentTab={setCurrentTab}
+        lang={lang}
+        setLang={setLang}
         onLogout={handleLogout}
         onOpenScanner={() => setShowScanner(true)}
-        currentLang={currentLang}
-        onToggleLang={handleToggleLang}
       />
 
-      {/* Cloud Status Banner */}
-      <div className="bg-blue-50 border-b border-blue-200 px-4 py-1.5 text-center text-xs text-blue-900 font-medium flex items-center justify-center gap-2 no-print">
-        <span className={`h-2 w-2 rounded-full ${loadingCloud ? 'bg-amber-500 animate-spin' : 'bg-emerald-500 animate-pulse'}`}></span>
-        <span>{cloudMessage}</span>
-        <button
-          type="button"
-          onClick={handleManualSync}
-          disabled={loadingCloud}
-          className="ml-2 text-[11px] font-bold text-blue-700 hover:text-blue-900 underline cursor-pointer disabled:opacity-50"
-        >
-          {loadingCloud ? (currentLang === 'ta' ? 'இணைக்கப்படுகிறது...' : 'Syncing...') : (currentLang === 'ta' ? 'இப்போதே இணைக்க' : 'Sync Now')}
-        </button>
-      </div>
-
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-6">
-        {/* If Receptionist: STRICTLY RECEPTION VIEW (Requirement #1) */}
-        {isReceptionist ? (
-          <ReceptionView
+      {/* Main View Area with strict overflow safety */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 no-print overflow-x-hidden">
+        {safeTab === 'dashboard' && (
+          <DashboardView
+            beneficiaries={beneficiaries}
+            tokens={tokens}
+            divisions={divisions}
+            users={users}
+            auditLogs={auditLogs}
             currentUser={currentUser}
-            currentLang={currentLang}
-            onSelectFamily={handleSelectFamilyFromAnywhere}
-            onOpenScanner={() => setShowScanner(true)}
+            lang={lang}
+            onNavigate={(tab) => setCurrentTab(tab)}
           />
-        ) : (
-          <>
-            {activeTab === 'dashboard' && (
-              <DashboardView
-                currentUser={currentUser}
-                currentLang={currentLang}
-                onNavigate={setActiveTab}
-                onSelectFamily={handleSelectFamilyFromAnywhere}
-                onOpenScanner={() => setShowScanner(true)}
-              />
-            )}
+        )}
 
-            {activeTab === 'ai_report' && (
-              <AIStrategicReportView
-                currentUser={currentUser}
-                currentLang={currentLang}
-                onSelectFamily={handleSelectFamilyFromAnywhere}
-                onNavigate={setActiveTab}
-              />
-            )}
+        {safeTab === 'beneficiaries' && (
+          <BeneficiariesView
+            beneficiaries={beneficiaries}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdateBeneficiaries={handleUpdateBeneficiaries}
+            onAuditLog={handleAuditLog}
+          />
+        )}
 
-            {activeTab === 'reception' && (
-              <ReceptionView
-                currentUser={currentUser}
-                currentLang={currentLang}
-                onSelectFamily={handleSelectFamilyFromAnywhere}
-                onOpenScanner={() => setShowScanner(true)}
-              />
-            )}
+        {safeTab === 'reception' && (
+          <ReceptionTokenView
+            tokens={tokens}
+            beneficiaries={beneficiaries}
+            divisions={divisions}
+            lang={lang}
+            onUpdateTokens={handleUpdateTokens}
+            onAuditLog={handleAuditLog}
+            onNavigateToLiveDisplay={() => setCurrentTab('live-display')}
+          />
+        )}
 
-            {activeTab === 'registry' && (
-              <FamilyRegistryView
-                currentUser={currentUser}
-                currentLang={currentLang}
-                onRecordAssistance={handleRecordAssistanceForFamily}
-                onRequestTransfer={handleRequestTransferForMember}
-              />
-            )}
+        {safeTab === 'live-display' && (
+          <LiveCounterDisplayView
+            tokens={tokens}
+            beneficiaries={beneficiaries}
+            divisions={divisions}
+            lang={lang}
+            onUpdateTokens={handleUpdateTokens}
+            onAuditLog={handleAuditLog}
+            isNormalUser={isNormal}
+          />
+        )}
 
-            {activeTab === 'elderly' && (
-              <ElderlyRegistryView
-                currentUser={currentUser}
-                currentLang={currentLang}
-                onRecordAssistance={handleRecordAssistanceForFamily}
-                onRequestTransfer={handleRequestTransferForMember}
-              />
-            )}
+        {safeTab === 'ai-report' && (
+          <AiReportView
+            beneficiaries={beneficiaries}
+            tokens={tokens}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+            onAuditLog={handleAuditLog}
+          />
+        )}
 
-            {activeTab === 'disability' && (
-              <DisabilityRegistryView
-                currentUser={currentUser}
-                currentLang={currentLang}
-                onRecordAssistance={handleRecordAssistanceForFamily}
-                onRequestTransfer={handleRequestTransferForMember}
-              />
-            )}
+        {safeTab === 'csv' && (
+          <CsvManagementView
+            beneficiaries={beneficiaries}
+            users={users}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdateBeneficiaries={handleUpdateBeneficiaries}
+            onUpdateUsers={handleUpdateUsers}
+            onAuditLog={handleAuditLog}
+          />
+        )}
 
-            {activeTab === 'assistance' && currentUser.Role !== 'Auditor' && (
-              <AssistanceDeliveryView
-                currentUser={currentUser}
-                currentLang={currentLang}
-                preselectedFamily={assistancePreselectedFamily}
-                onViewFamily={handleSelectFamilyFromAnywhere}
-              />
-            )}
+        {safeTab === 'drive' && (
+          <DriveBackupView
+            currentUser={currentUser}
+            lang={lang}
+            onDatabaseReload={handleDatabaseReload}
+            onAuditLog={handleAuditLog}
+          />
+        )}
 
-            {activeTab === 'needs' && (
-              <NeedsAssessmentView
-                currentUser={currentUser}
-                currentLang={currentLang}
-                onSelectFamily={handleSelectFamilyFromAnywhere}
-              />
-            )}
-
-            {activeTab === 'requests' && (
-              <QrRequestsView
-                currentUser={currentUser}
-                currentLang={currentLang}
-                initialQR={transferRequestParams?.qrNumber || ''}
-                initialOldNIC={transferRequestParams?.oldNIC || ''}
-              />
-            )}
-
-            {activeTab === 'governance' && (currentUser.Role === 'Super_Admin' || currentUser.Role === 'Super Admin') && (
-              <ProgramsAndUsersView
-                currentUser={currentUser}
-                currentLang={currentLang}
-              />
-            )}
-
-            {activeTab === 'audit' && (
-              <AuditLogView
-                currentUser={currentUser}
-                currentLang={currentLang}
-              />
-            )}
-
-            {activeTab === 'sync' && (
-              <GoogleSheetsSyncView
-                currentLang={currentLang}
-              />
-            )}
-          </>
+        {safeTab === 'staff' && (
+          <StaffManagementView
+            users={users}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdateUsers={handleUpdateUsers}
+            onAuditLog={handleAuditLog}
+          />
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-4 px-6 text-xs text-slate-500 text-center no-print">
+      {/* Barcode / NIC Scanner Modal */}
+      {showScanner && (
+        <BarcodeScannerModal
+          beneficiaries={beneficiaries}
+          lang={lang}
+          onSelectBeneficiary={() => {
+            if (!isReception && !isNormal) {
+              setCurrentTab('beneficiaries');
+            } else if (isReception) {
+              setCurrentTab('reception');
+            } else {
+              setCurrentTab('live-display');
+            }
+          }}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
+
+      {/* Official Civic Footer */}
+      <footer className="bg-white border-t border-slate-200 py-4 px-4 sm:px-6 text-center text-xs text-slate-500 no-print w-full overflow-x-hidden">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>
-            {currentLang === 'ta'
-              ? 'பிரதேச செயலகம் – கோரளைப்பற்று வடக்கு (வாகரை) • மட்டக்களப்பு மாவட்டம்'
-              : 'Divisional Secretariat – Vaharai • Batticaloa District • Beneficiary Assistance Management System'}
+            © 2026 {lang === 'ta' ? 'கோறளைப்பற்று வடக்கு (வாகரை) பிரதேச செயலகம் · மட்டக்களப்பு மாவட்டம்' : 'Divisional Secretariat Koralaipattu North (Vaharai) · Batticaloa District'}
           </span>
-          <span className="font-mono text-[11px] text-slate-400">
-            {currentLang === 'ta'
-              ? '16 கிராம சேவகர் பிரிவுகள் • Google Apps Script நேரலை இணைப்பு'
-              : '16 GN Divisions • Google Apps Script Enabled'}
-          </span>
+          <div className="flex items-center gap-3 text-[10px] sm:text-[11px] font-mono text-slate-400 flex-wrap justify-center">
+            <span>Live Display: Normal User Support</span>
+            <span>·</span>
+            <span>Roles: SuperAdmin, Admin 1, Admin 2</span>
+            <span>·</span>
+            <span>Cloud: Google Drive</span>
+            <span>·</span>
+            <span>Print: Thermal 58/80mm & PDF</span>
+          </div>
         </div>
       </footer>
-
-      {/* Modals */}
-      {showScanner && (
-        <QrScannerModal
-          currentUser={currentUser}
-          currentLang={currentLang}
-          onClose={() => setShowScanner(false)}
-          onSelectFamily={handleSelectFamilyFromAnywhere}
-          onRecordAssistance={handleRecordAssistanceForFamily}
-        />
-      )}
-
-      {inspectedFamily && (
-        <FamilyDetailModal
-          family={inspectedFamily}
-          currentUser={currentUser}
-          currentLang={currentLang}
-          onClose={() => setInspectedFamily(null)}
-          onFamilyUpdated={() => {
-            const ref = StorageService.getFamily(currentUser, inspectedFamily.QR_Number);
-            if (ref.family) setInspectedFamily(ref.family);
-          }}
-          onRecordAssistance={handleRecordAssistanceForFamily}
-          onRequestTransfer={handleRequestTransferForMember}
-        />
-      )}
     </div>
   );
 }

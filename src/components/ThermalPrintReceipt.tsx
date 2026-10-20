@@ -157,6 +157,74 @@ export const ThermalPrintReceipt: React.FC<ThermalPrintReceiptProps> = ({
             நன்றி! உங்கள் எண் அழைக்கப்படும் வரை காத்திருக்கவும்.
             <div className="text-[8px] text-slate-400">Thank you for your patience.</div>
           </div>
+
+          {/* Perforated tear-off section for Citizen Star Rating Feedback */}
+          <div className="mt-3 pt-2 border-t-2 border-dashed border-black text-[9px] text-left">
+            <div className="flex items-center justify-between font-bold mb-1 text-[10px]">
+              <span>✂️ வெட்டி ஒப்படைக்கவும்</span>
+              <span className="font-mono text-[9px]">FEEDBACK SLIP</span>
+            </div>
+            <div className="text-center font-bold text-[10px] text-slate-900 bg-slate-100 py-0.5 rounded border border-slate-300">
+              சேவை திருப்தி நட்சத்திர மதிப்பீடு
+            </div>
+            <div className="text-[8px] text-center text-slate-600 mb-1.5">
+              (Public Service Star Rating - Mark your feedback)
+            </div>
+
+            {/* 5 Star Rating Options to Mark */}
+            <div className="space-y-1 bg-white p-1.5 rounded border border-slate-300 text-[9px]">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3.5 h-3.5 border border-black rounded-xs"></span>
+                  <span className="font-bold text-amber-600">⭐⭐⭐⭐⭐ 5</span>
+                </span>
+                <span className="text-[8px] text-slate-600 font-medium">மிகச் சிறப்பு (Excellent)</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3.5 h-3.5 border border-black rounded-xs"></span>
+                  <span className="font-bold text-amber-600">⭐⭐⭐⭐ 4</span>
+                </span>
+                <span className="text-[8px] text-slate-600 font-medium">நன்று (Good)</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3.5 h-3.5 border border-black rounded-xs"></span>
+                  <span className="font-bold text-amber-600">⭐⭐⭐ 3</span>
+                </span>
+                <span className="text-[8px] text-slate-600 font-medium">திருப்தி (Satisfactory)</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3.5 h-3.5 border border-black rounded-xs"></span>
+                  <span className="font-bold text-amber-600">⭐⭐ 2</span>
+                </span>
+                <span className="text-[8px] text-slate-600 font-medium">பரவாயில்லை (Average)</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3.5 h-3.5 border border-black rounded-xs"></span>
+                  <span className="font-bold text-amber-600">⭐ 1</span>
+                </span>
+                <span className="text-[8px] text-slate-600 font-medium">அதிருப்தி (Poor)</span>
+              </div>
+            </div>
+
+            <div className="mt-2 text-[8.5px] space-y-1.5 leading-tight">
+              <div>
+                <span className="font-semibold">சேவையை வழங்கிய அலுவலர்:</span>{' '}
+                <span className="font-bold font-mono text-[9px]">{token.officerToMeet || '_________________'}</span>
+              </div>
+              <div>
+                <span className="font-semibold">பிரஜையின் கருத்து / குறிப்பு:</span>{' '}
+                <span className="text-slate-400">_____________________________</span>
+              </div>
+              <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                <span className="font-mono text-[8px]">வரிசை எண்: {token.tokenNumber}</span>
+                <span className="text-[8px]">ஒப்பம்: __________________</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Action Buttons for screen */}

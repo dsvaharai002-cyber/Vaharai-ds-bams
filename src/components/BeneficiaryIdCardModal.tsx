@@ -29,7 +29,8 @@ export const BeneficiaryIdCardModal: React.FC<BeneficiaryIdCardModalProps> = ({
       });
     }
 
-    const payload = `LK-DS-VAHARAI|ID:${beneficiary.id}|NIC:${beneficiary.nic}|DIV:${beneficiary.divisionCode}|HH:${beneficiary.householdNo}|SCHEME:${beneficiary.welfareScheme}`;
+    const famCode = beneficiary.familyCode || (beneficiary.householdNo ? `FAM-${beneficiary.householdNo.replace(/^HH-/, '')}` : `FAM-${beneficiary.divisionCode}-001`);
+    const payload = beneficiary.familyQrPayload || `VHR-FAMILY|FAM:${famCode}|DIV:${beneficiary.divisionCode}|MEMBERS_LINKED`;
     generateQrDataUrl(payload).then((url) => {
       setQrSrc(url);
     });
@@ -127,9 +128,35 @@ export const BeneficiaryIdCardModal: React.FC<BeneficiaryIdCardModalProps> = ({
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-500 block">குடும்ப எண் / HH:</span>
-                  <span className="font-mono text-slate-700">{beneficiary.householdNo}</span>
+                  <span className="text-[10px] text-slate-500 block">குடும்ப குறியீடு (Family Code):</span>
+                  <span className="font-mono font-bold text-purple-900 text-[11px]">
+                    {beneficiary.familyCode || beneficiary.householdNo}
+                  </span>
                 </div>
+              </div>
+
+              {/* Specialized Category Badges */}
+              <div className="pt-1 border-t border-slate-100 flex items-center gap-1 flex-wrap">
+                {beneficiary.isPregnantMother && (
+                  <span className="bg-pink-100 text-pink-900 font-bold px-1.5 py-0.5 rounded text-[9px]">
+                    🤰 கர்ப்பிணித் தாய் ({beneficiary.pregnancyStageMonths || 6}வது மாதம்)
+                  </span>
+                )}
+                {beneficiary.isPersonWithDisability && (
+                  <span className="bg-blue-100 text-blue-900 font-bold px-1.5 py-0.5 rounded text-[9px]">
+                    ♿ மாற்றுத்திறனாளி
+                  </span>
+                )}
+                {beneficiary.isWomanHeadedHousehold && (
+                  <span className="bg-amber-100 text-amber-900 font-bold px-1.5 py-0.5 rounded text-[9px]">
+                    👩‍👧 பெண் தலைமைத்துவம்
+                  </span>
+                )}
+                {beneficiary.isSamurdhiBeneficiary && (
+                  <span className="bg-emerald-100 text-emerald-900 font-bold px-1.5 py-0.5 rounded text-[9px]">
+                    🌾 சமுர்த்தி பயனாளி
+                  </span>
+                )}
               </div>
 
               <div className="pt-1 border-t border-slate-100">

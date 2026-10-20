@@ -170,7 +170,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
           {lang === 'ta' ? 'விரைவுச் செயல்பாடுகள்' : 'Quick Actions'}
         </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <button
             onClick={() => onNavigate('beneficiaries')}
             className="p-3 bg-slate-50 hover:bg-emerald-50 text-slate-800 hover:text-emerald-950 border border-slate-200 hover:border-emerald-300 rounded-xl text-left transition-colors"
@@ -187,6 +187,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="text-xl mb-1">🖨️</div>
             <div className="text-xs font-bold">{t.issueNewToken}</div>
             <div className="text-[10px] text-slate-500 mt-0.5">{lang === 'ta' ? 'தர்மல் ரசீது அச்சிடல்' : 'Thermal Print 58/80mm'}</div>
+          </button>
+
+          <button
+            onClick={() => onNavigate('assistance')}
+            className="p-3 bg-rose-50/70 hover:bg-rose-100/80 text-rose-950 border border-rose-200 hover:border-rose-300 rounded-xl text-left transition-colors"
+          >
+            <div className="text-xl mb-1">🎁</div>
+            <div className="text-xs font-bold">{lang === 'ta' ? 'உதவி வழங்கல் & இரட்டை உதவி தடுப்பு' : 'Relief & Anti-Duplication'}</div>
+            <div className="text-[10px] text-rose-800 mt-0.5">{lang === 'ta' ? 'சிஎஸ்வி மாதிரி & குடும்ப QR' : 'CSV Model & Family QR'}</div>
           </button>
 
           <button

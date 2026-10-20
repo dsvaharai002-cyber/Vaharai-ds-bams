@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { Beneficiary, GNDivision, User, WelfareScheme, ChronicIllness, WelfareStatus } from '../types';
+import { Beneficiary, GNDivision, User, WelfareScheme, ChronicIllness, WelfareStatus, FamilyRelationship } from '../types';
 import { Language, translations } from '../translations/i18n';
 import { BeneficiaryIdCardModal } from './BeneficiaryIdCardModal';
 import { PrintableFilteredReportModal } from './PrintableFilteredReportModal';
 import { calculateAge, generateSystemCitizenId, generateProvisionalNic } from '../services/storage';
+import { generateQrDataUrl } from '../utils/barcode';
 
 interface BeneficiariesViewProps {
   beneficiaries: Beneficiary[];
@@ -24,10 +25,16 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
 }) => {
   const t = translations[lang];
 
-  // Role separation check: GN officer only sees their assigned division
+  // Role separation check
   const isGramaNiladhari = currentUser.role === 'GRAMANIILATHARI';
   const officerDivision = isGramaNiladhari ? currentUser.division || '211' : '';
   const canDelete = currentUser.role === 'SUPERADMIN' || currentUser.role === 'ADMIN 1' || currentUser.role === 'ADMIN 2';
+
+  // Specialized Officer Roles
+  const isECDO = currentUser.role === 'ECDO';
+  const isDisabilityOfficer = currentUser.role === 'DISABILITY_OFFICER';
+  const isWHHOfficer = currentUser.role === 'WHH_OFFICER';
+  const isSamurdhiOfficer = currentUser.role === 'SAMURDHI_OFFICER';
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
@@ -35,6 +42,19 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
   const [selectedWelfare, setSelectedWelfare] = useState<string>('ALL');
   const [selectedIllness, setSelectedIllness] = useState<string>('ALL');
   const [filterYouth16Only, setFilterYouth16Only] = useState<boolean>(false);
+
+  // Specialized Category Quick Filter (ECDO, Disability, WHH, Samurdhi, Family Master)
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'PREGNANT' | 'DISABILITY' | 'WHH' | 'SAMURDHI'>(() => {
+    if (isECDO) return 'PREGNANT';
+    if (isDisabilityOfficer) return 'DISABILITY';
+    if (isWHHOfficer) return 'WHH';
+    if (isSamurdhiOfficer) return 'SAMURDHI';
+    return 'ALL';
+  });
+
+  // Family Master QR Modal State (Unified QR shared across family members)
+  const [selectedFamilyForModal, setSelectedFamilyForModal] = useState<string | null>(null);
+  const [familyQrDataUrl, setFamilyQrDataUrl] = useState<string>('');
 
   // Modals State
   const [viewingCardBeneficiary, setViewingCardBeneficiary] = useState<Beneficiary | null>(null);
@@ -51,6 +71,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
     welfareStatus: 'ACTIVE',
     chronicIllness: 'NONE',
     isProvisionalNic: false,
+    familyRelationship: 'HEAD',
   });
 
   // Filtered dataset
@@ -64,7 +85,13 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
         return false;
       }
 
-      // 2. Welfare Scheme filter
+      // 2. Specialized Category filter (ECDO, Disability, WHH, Samurdhi)
+      if (categoryFilter === 'PREGNANT' && !b.isPregnantMother) return false;
+      if (categoryFilter === 'DISABILITY' && !b.isPersonWithDisability && b.chronicIllness !== 'DISABILITY_PHYSICAL') return false;
+      if (categoryFilter === 'WHH' && !b.isWomanHeadedHousehold) return false;
+      if (categoryFilter === 'SAMURDHI' && !b.isSamurdhiBeneficiary && b.welfareScheme !== 'SAMURDHI' && !b.welfareScheme.startsWith('ASWESUMA')) return false;
+
+      // 3. Welfare Scheme filter
       if (selectedWelfare !== 'ALL') {
         if (selectedWelfare === 'ASWESUMA_ALL') {
           if (!b.welfareScheme.startsWith('ASWESUMA')) return false;
@@ -73,18 +100,18 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
         }
       }
 
-      // 3. Chronic Illness filter
+      // 4. Chronic Illness filter
       if (selectedIllness !== 'ALL' && b.chronicIllness !== selectedIllness) {
         return false;
       }
 
-      // 4. 16 Years Completed filter (For NIC applications)
+      // 5. 16 Years Completed filter (For NIC applications)
       const age = calculateAge(b.dob);
       if (filterYouth16Only && age !== 16) {
         return false;
       }
 
-      // 5. Search query
+      // 6. Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchesNic = (b.nic || '').toLowerCase().includes(q);
@@ -93,12 +120,23 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
         const matchesNameEn = (b.nameEn || '').toLowerCase().includes(q);
         const matchesPhone = (b.phone || '').toLowerCase().includes(q);
         const matchesHh = (b.householdNo || '').toLowerCase().includes(q);
-        return matchesNic || matchesId || matchesNameTa || matchesNameEn || matchesPhone || matchesHh;
+        const matchesFam = (b.familyCode || '').toLowerCase().includes(q);
+        return matchesNic || matchesId || matchesNameTa || matchesNameEn || matchesPhone || matchesHh || matchesFam;
       }
 
       return true;
     });
-  }, [beneficiaries, isGramaNiladhari, officerDivision, selectedDivision, selectedWelfare, selectedIllness, filterYouth16Only, searchQuery]);
+  }, [
+    beneficiaries,
+    isGramaNiladhari,
+    officerDivision,
+    selectedDivision,
+    categoryFilter,
+    selectedWelfare,
+    selectedIllness,
+    filterYouth16Only,
+    searchQuery,
+  ]);
 
   // Open Add Citizen Modal with automated System ID
   const handleOpenAdd = () => {
@@ -172,6 +210,8 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
 
     const barcode = nic || id;
     const qrPayload = `VHR-DS|ID:${id}|NIC:${nic}|DIV:${divisionCode}|MED:${formData.chronicIllness}|SCHEME:${formData.welfareScheme}`;
+    const familyCode = formData.familyCode?.trim() || (formData.householdNo ? `FAM-${formData.householdNo.replace(/^HH-/, '')}` : `FAM-${divisionCode}-001`);
+    const familyQrPayload = `VHR-FAMILY|FAM:${familyCode}|DIV:${divisionCode}|MEMBERS_LINKED`;
 
     const recordToSave: Beneficiary = {
       id,
@@ -186,11 +226,20 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
       divisionCode,
       familyHead: formData.familyHead ?? true,
       householdNo: formData.householdNo?.trim() || `HH-${divisionCode}-001`,
+      familyCode,
+      familyRelationship: (formData.familyRelationship as FamilyRelationship) || (formData.familyHead ? 'HEAD' : 'CHILD'),
+      isPregnantMother: !!formData.isPregnantMother,
+      pregnancyStageMonths: formData.isPregnantMother ? formData.pregnancyStageMonths : undefined,
+      isPersonWithDisability: !!formData.isPersonWithDisability,
+      disabilityType: formData.isPersonWithDisability ? formData.disabilityType : undefined,
+      isWomanHeadedHousehold: !!formData.isWomanHeadedHousehold,
+      isSamurdhiBeneficiary: !!formData.isSamurdhiBeneficiary,
       welfareScheme: (formData.welfareScheme as WelfareScheme) || 'NONE',
       welfareStatus: (formData.welfareStatus as WelfareStatus) || 'ACTIVE',
       chronicIllness: (formData.chronicIllness as ChronicIllness) || 'NONE',
       barcode,
       qrPayload,
+      familyQrPayload,
       notes: formData.notes?.trim() || '',
       createdAt: isNewRecord ? new Date().toISOString() : formData.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -199,7 +248,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
     let updated: Beneficiary[];
     if (isNewRecord) {
       updated = [recordToSave, ...beneficiaries];
-      onAuditLog('CREATE_BENEFICIARY', `Registered citizen ${recordToSave.nameEn} (ID: ${recordToSave.id}, NIC: ${recordToSave.nic})`);
+      onAuditLog('CREATE_BENEFICIARY', `Registered citizen ${recordToSave.nameEn} (ID: ${recordToSave.id}, NIC: ${recordToSave.nic}, Family: ${familyCode})`);
     } else {
       updated = beneficiaries.map((b) => (b.id === recordToSave.id ? recordToSave : b));
       onAuditLog('UPDATE_BENEFICIARY', `Updated citizen ${recordToSave.nameEn} (ID: ${recordToSave.id})`);
@@ -207,6 +256,14 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
 
     onUpdateBeneficiaries(updated);
     setEditingBeneficiary(null);
+  };
+
+  const handleOpenFamilyMasterModal = (famCode: string) => {
+    setSelectedFamilyForModal(famCode);
+    const payload = `VHR-FAMILY|FAM:${famCode}|MEMBERS_LINKED`;
+    generateQrDataUrl(payload).then((url) => {
+      setFamilyQrDataUrl(url);
+    });
   };
 
   const handleDelete = (b: Beneficiary) => {

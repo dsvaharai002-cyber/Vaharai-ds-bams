@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Beneficiary, QueueToken, GNDivision, SystemAuditLog } from './types';
+import { User, Beneficiary, QueueToken, GNDivision, SystemAuditLog, AssistanceRecord } from './types';
 import { Language } from './translations/i18n';
 import {
   loadUsers,
@@ -11,6 +11,8 @@ import {
   loadDivisions,
   loadAuditLogs,
   logAuditAction,
+  loadAssistanceRecords,
+  saveAssistanceRecords,
 } from './services/storage';
 import { getActiveUserSession, setActiveUserSession } from './services/auth';
 import { Header } from './components/Header';
@@ -23,6 +25,8 @@ import { StaffManagementView } from './components/StaffManagementView';
 import { CsvManagementView } from './components/CsvManagementView';
 import { DriveBackupView } from './components/DriveBackupView';
 import { AiReportView } from './components/AiReportView';
+import { ServiceAuditView } from './components/ServiceAuditView';
+import { AssistanceDistributionView } from './components/AssistanceDistributionView';
 import { BarcodeScannerModal } from './components/BarcodeScannerModal';
 
 export default function App() {
@@ -37,6 +41,7 @@ export default function App() {
   const [tokens, setTokens] = useState<QueueToken[]>(() => loadTokens());
   const [divisions, setDivisions] = useState<GNDivision[]>(() => loadDivisions());
   const [auditLogs, setAuditLogs] = useState<SystemAuditLog[]>(() => loadAuditLogs());
+  const [assistanceRecords, setAssistanceRecords] = useState<AssistanceRecord[]>(() => loadAssistanceRecords());
 
   // Quick Barcode Scanner Modal
   const [showScanner, setShowScanner] = useState<boolean>(false);
@@ -115,12 +120,18 @@ export default function App() {
     saveTokens(newTokens);
   };
 
+  const handleUpdateAssistanceRecords = (newRecords: AssistanceRecord[]) => {
+    setAssistanceRecords(newRecords);
+    saveAssistanceRecords(newRecords);
+  };
+
   const handleDatabaseReload = () => {
     setUsers(loadUsers());
     setBeneficiaries(loadBeneficiaries());
     setTokens(loadTokens());
     setDivisions(loadDivisions());
     setAuditLogs(loadAuditLogs());
+    setAssistanceRecords(loadAssistanceRecords());
   };
 
   // If user signed out, show official login screen
@@ -148,9 +159,13 @@ export default function App() {
       ? 'dashboard'
       : currentTab === 'beneficiaries' && isReception
       ? 'reception'
+      : currentTab === 'assistance' && (isReception || isNormal)
+      ? 'dashboard'
       : currentTab === 'drive' && !isAdmin
       ? 'dashboard'
       : currentTab === 'ai-report' && !isAdmin
+      ? 'dashboard'
+      : currentTab === 'service-audit' && !isAdmin
       ? 'dashboard'
       : currentTab;
 
@@ -198,8 +213,10 @@ export default function App() {
             tokens={tokens}
             beneficiaries={beneficiaries}
             divisions={divisions}
+            currentUser={currentUser}
             lang={lang}
             onUpdateTokens={handleUpdateTokens}
+            onUpdateBeneficiaries={handleUpdateBeneficiaries}
             onAuditLog={handleAuditLog}
             onNavigateToLiveDisplay={() => setCurrentTab('live-display')}
           />
@@ -228,15 +245,30 @@ export default function App() {
           />
         )}
 
+        {safeTab === 'assistance' && (
+          <AssistanceDistributionView
+            assistanceRecords={assistanceRecords}
+            beneficiaries={beneficiaries}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdateAssistanceRecords={handleUpdateAssistanceRecords}
+            onUpdateBeneficiaries={handleUpdateBeneficiaries}
+            onAuditLog={handleAuditLog}
+          />
+        )}
+
         {safeTab === 'csv' && (
           <CsvManagementView
             beneficiaries={beneficiaries}
             users={users}
             divisions={divisions}
+            assistanceRecords={assistanceRecords}
             currentUser={currentUser}
             lang={lang}
             onUpdateBeneficiaries={handleUpdateBeneficiaries}
             onUpdateUsers={handleUpdateUsers}
+            onUpdateAssistanceRecords={handleUpdateAssistanceRecords}
             onAuditLog={handleAuditLog}
           />
         )}
@@ -246,6 +278,19 @@ export default function App() {
             currentUser={currentUser}
             lang={lang}
             onDatabaseReload={handleDatabaseReload}
+            onAuditLog={handleAuditLog}
+          />
+        )}
+
+        {safeTab === 'service-audit' && (
+          <ServiceAuditView
+            tokens={tokens}
+            beneficiaries={beneficiaries}
+            divisions={divisions}
+            users={users}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdateTokens={handleUpdateTokens}
             onAuditLog={handleAuditLog}
           />
         )}

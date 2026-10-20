@@ -19,6 +19,8 @@ import {
   FolderKanban,
   Settings2,
   CheckCircle2,
+  ClipboardList,
+  Gift,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -96,8 +98,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Determine which sub-menu is currently active
   const isPublicServicesActive = currentTab === 'reception' || currentTab === 'live-display';
-  const isRegistryActive = currentTab === 'beneficiaries' || currentTab === 'csv' || currentTab === 'ai-report';
-  const isAdminActive = currentTab === 'staff' || currentTab === 'drive';
+  const isRegistryActive = currentTab === 'beneficiaries' || currentTab === 'assistance' || currentTab === 'csv' || currentTab === 'ai-report';
+  const isAdminActive = currentTab === 'staff' || currentTab === 'drive' || currentTab === 'service-audit';
 
   // Sub-menu definitions
   const publicServiceItems = [
@@ -145,6 +147,17 @@ export const Header: React.FC<HeaderProps> = ({
           },
         ]
       : []),
+    ...(!isReception && !isNormal
+      ? [
+          {
+            id: 'assistance',
+            title: lang === 'ta' ? 'உதவி வழங்கல் & இரட்டை உதவி தடுப்பு' : 'Relief & Anti-Duplication Desk',
+            subtitle: lang === 'ta' ? 'சிஎஸ்வி மாதிரி, அப்லோட் & குடும்ப QR சரிபார்ப்பு' : 'CSV model, bulk upload & duplicate prevention',
+            icon: Gift,
+            badge: lang === 'ta' ? 'நிவாரணம்' : 'Relief',
+          },
+        ]
+      : []),
     ...(canAccessCsv
       ? [
           {
@@ -189,6 +202,17 @@ export const Header: React.FC<HeaderProps> = ({
             subtitle: lang === 'ta' ? 'கூகிள் டிரைவ் மேகக் காப்புநகல் & மீளமைத்தல்' : 'Google Drive cloud database backup & restore',
             icon: HardDrive,
             badge: 'Cloud',
+          },
+        ]
+      : []),
+    ...(isAdmin
+      ? [
+          {
+            id: 'service-audit',
+            title: lang === 'ta' ? 'சேவை தணிக்கை & நிறைவடையாதோர்' : 'Service Audit & Incomplete Records',
+            subtitle: lang === 'ta' ? 'நிறைவு அடையாதோர் & நிறைவு செய்த உத்தியோகத்தர் (திகதி வாரியாக)' : 'Pending tokens, completed officers & star ratings by date',
+            icon: ClipboardList,
+            badge: lang === 'ta' ? 'அட்மின் போல்டர்' : 'Admin Folder',
           },
         ]
       : []),

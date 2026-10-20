@@ -72,6 +72,28 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
     setIsConnected(false);
     setGoogleUserEmail('');
     setDriveBackups([]);
+    setStatusMessage(lang === 'ta' ? 'கூகிள் கணக்கு விலகப்பட்டது.' : 'Google Drive disconnected.');
+  };
+
+  const handleSwitchAccount = async () => {
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      await disconnectGoogleDrive();
+      setIsConnected(false);
+      setGoogleUserEmail('');
+      setDriveBackups([]);
+      const { user } = await signInWithGoogleDrive();
+      setIsConnected(true);
+      setGoogleUserEmail(user.email || 'Connected Google Account');
+      setStatusMessage(lang === 'ta' ? 'புதிய கூகிள் டிரைவ் கணக்கு வெற்றிகரமாக மாற்றப்பட்டது!' : 'Switched to new Google Drive account successfully!');
+      await fetchBackups();
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage(err.message || 'Failed to switch Google account');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const fetchBackups = async () => {
@@ -81,7 +103,6 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
       setDriveBackups(list);
     } catch (err: any) {
       console.error('Fetch backups error:', err);
-      // Non fatal, maybe empty
     } finally {
       setIsLoading(false);
     }
@@ -189,14 +210,25 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {isConnected ? (
-            <button
-              onClick={handleDisconnect}
-              className="px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 rounded-lg font-medium transition-colors border border-red-200"
-            >
-              {lang === 'ta' ? 'இணைப்பைத் துண்டி' : 'Disconnect'}
-            </button>
+            <>
+              <button
+                onClick={handleSwitchAccount}
+                disabled={isLoading}
+                className="px-3 py-1.5 text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg font-semibold transition-colors border border-emerald-300 flex items-center gap-1.5"
+                title="Switch to another Google Account"
+              >
+                <span>🔄</span>
+                <span>{lang === 'ta' ? 'வேறு கூகிள் கணக்கை மாற்றுக' : 'Switch Google Account'}</span>
+              </button>
+              <button
+                onClick={handleDisconnect}
+                className="px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 rounded-lg font-medium transition-colors border border-red-200"
+              >
+                {lang === 'ta' ? 'இணைப்பைத் துண்டி' : 'Disconnect'}
+              </button>
+            </>
           ) : (
             <button
               onClick={handleConnectGoogle}
@@ -212,6 +244,59 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
               <span>{t.connectDrive}</span>
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Clear Guidance Card: Where data is stored & how to switch accounts */}
+      <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/80 rounded-xl p-5 shadow-xs">
+        <div className="flex items-start gap-3">
+          <span className="text-2xl mt-0.5">ℹ️</span>
+          <div className="space-y-2 text-xs text-slate-800">
+            <h3 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
+              <span>{lang === 'ta' ? 'தரவுகள் எங்கு சேமிக்கப்படுகிறது? டிரைவை எப்படி மாற்றுவது?' : 'Where are backups stored & how to switch Drive?'}</span>
+              <span className="text-[10px] bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded-full font-mono">
+                GOOGLE DRIVE GUIDE
+              </span>
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              <div className="bg-white/80 border border-emerald-100 rounded-lg p-3">
+                <div className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                  <span>📂</span>
+                  <span>{lang === 'ta' ? '1. சேமிக்கப்படும் இடம் (Storage Location):' : '1. Exact Storage Location:'}</span>
+                </div>
+                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                  {lang === 'ta'
+                    ? 'நீங்கள் இணைத்துள்ள கூகிள் கணக்கின் Google Drive-ல் பிரதான கோப்பகத்தில் (My Drive) "vaharai_ds_backup_YYYY-MM-DD-HH-mm-ss.json" என்ற பெயரில் JSON ஆவணமாகப் பாதுகாப்பாக சேமிக்கப்படுகிறது.'
+                    : 'Saved directly in your Google Drive root folder ("My Drive") as "vaharai_ds_backup_YYYY-MM-DD-HH-mm-ss.json".'}
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <a
+                    href="https://drive.google.com/drive/my-drive"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-[11px] font-semibold transition-colors"
+                  >
+                    <span>🌐</span>
+                    <span>{lang === 'ta' ? 'கூகிள் டிரைவை திறக்கவும்' : 'Open drive.google.com'}</span>
+                  </a>
+                  <span className="text-[10px] text-slate-500 font-mono">search: vaharai_ds_backup</span>
+                </div>
+              </div>
+
+              <div className="bg-white/80 border border-emerald-100 rounded-lg p-3">
+                <div className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                  <span>🔄</span>
+                  <span>{lang === 'ta' ? '2. டிரைவ் கணக்கை மாற்றுவது எப்படி?' : '2. How to switch Google Account:'}</span>
+                </div>
+                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                  {lang === 'ta'
+                    ? 'வேறு ஜிமெயில் கணக்கிற்கு மாற்ற விரும்பினால், மேலே உள்ள "வேறு கூகிள் கணக்கை மாற்றுக" பொத்தானை அழுத்தவும். உடனடியாக கூகிள் உள்நுழைவுத் திரை தோன்றும்; அதில் நீங்கள் விரும்பும் எந்தவொரு உத்தியோகபூர்வ ஜிமெயில் கணக்கையும் தேர்வு செய்யலாம்.'
+                    : 'To use a different Google account or Gmail, click "Switch Google Account". A Google popup will open allowing you to select and authenticate with any other account.'}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -242,8 +327,8 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
               </span>
             </div>
             {googleUserEmail && (
-              <span className="text-xs font-mono text-slate-500 mt-1 block">
-                {googleUserEmail}
+              <span className="text-xs font-mono text-emerald-800 font-bold mt-1 block">
+                📧 {googleUserEmail}
               </span>
             )}
           </div>

@@ -4,6 +4,7 @@ import { Language, translations } from '../translations/i18n';
 import {
   signInWithGoogleDrive,
   getGoogleAccessToken,
+  setGoogleAccessToken,
   disconnectGoogleDrive,
 } from '../services/auth';
 import {
@@ -15,6 +16,8 @@ import {
 import {
   createDatabaseSnapshot,
   restoreDatabaseFromSnapshot,
+  getCentralDatabaseStatus,
+  pushToCentralDatabase,
 } from '../services/storage';
 
 interface DriveBackupViewProps {
@@ -38,6 +41,10 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [copiedDomain, setCopiedDomain] = useState<boolean>(false);
+  const [showManualToken, setShowManualToken] = useState<boolean>(false);
+  const [manualTokenInput, setManualTokenInput] = useState<string>('');
+  const [serverDbStatus, setServerDbStatus] = useState<any>(null);
 
   // Confirmation dialog state for destructive/mutating operations
   const [confirmModalItem, setConfirmModalItem] = useState<DriveBackupItem | null>(null);
@@ -48,7 +55,28 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
       setIsConnected(true);
       fetchBackups();
     }
+
+    // Check central server status
+    getCentralDatabaseStatus().then((status) => {
+      if (status) setServerDbStatus(status);
+    });
   }, []);
+
+  const handleForceSyncServer = async () => {
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      await pushToCentralDatabase();
+      const status = await getCentralDatabaseStatus();
+      setServerDbStatus(status);
+      setStatusMessage(lang === 'ta' ? 'மத்திய சர்வர் தரவுத்தளம் வெற்றிகரமாக ஒத்திசைக்கப்பட்டது!' : 'Central server database synced successfully!');
+      onDatabaseReload();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Sync failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleConnectGoogle = async () => {
     setIsLoading(true);
@@ -91,6 +119,33 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
     } catch (err: any) {
       console.error(err);
       setErrorMessage(err.message || 'Failed to switch Google account');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+
+  const handleCopyDomain = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(currentHostname);
+      setCopiedDomain(true);
+      setTimeout(() => setCopiedDomain(false), 3000);
+    }
+  };
+
+  const handleApplyManualToken = async () => {
+    if (!manualTokenInput.trim()) return;
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      setGoogleAccessToken(manualTokenInput.trim());
+      setIsConnected(true);
+      setGoogleUserEmail('OAuth Token User');
+      setStatusMessage(lang === 'ta' ? 'அணுகல் டோக்கன் ஏற்றுக்கொள்ளப்பட்டது!' : 'Access Token applied successfully!');
+      await fetchBackups();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Invalid Token');
     } finally {
       setIsLoading(false);
     }
@@ -300,6 +355,96 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
         </div>
       </div>
 
+      {/* Central Master Database & Staff Login Architecture Card */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-xl p-5 shadow-md border border-slate-700">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-700/80">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl p-2 bg-indigo-500/20 rounded-lg border border-indigo-400/30">🏢</span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white tracking-wide">
+                  {lang === 'ta' ? 'பிரதேச செயலக மத்திய சர்வர் சேமிப்பக முறைமை' : 'DS Central Master Server Architecture'}
+                </h3>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  {lang === 'ta' ? 'தானியங்கி ஒத்திசைவு செயலில் உள்ளது' : 'LIVE AUTO-SYNC ACTIVE'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 mt-0.5">
+                {lang === 'ta'
+                  ? 'அனைத்து அலுவலர்களும் தனித்தனி கூகிள் கணக்குகள் இன்றியே தங்களுடைய User ID / Password மூலம் இந்த ஒரு மைய சேமிப்பகத்தில் இயங்க முடியும்.'
+                  : 'All staff operate from a single central master repository using their official Staff ID / Password.'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleForceSyncServer}
+            disabled={isLoading}
+            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs w-fit"
+          >
+            <span>🔄</span>
+            <span>{lang === 'ta' ? 'சர்வர் தரவை இப்போதே ஒத்திசைக்குக' : 'Force Sync Server'}</span>
+          </button>
+        </div>
+
+        {/* 3 Pillars of Centralized Architecture */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4 text-xs">
+          <div className="bg-slate-800/80 border border-slate-700 rounded-lg p-3">
+            <div className="font-bold text-indigo-300 flex items-center gap-1.5 text-xs">
+              <span>👤</span>
+              <span>{lang === 'ta' ? '1. உத்தியோகபூர்வ User ID / Password:' : '1. Staff ID & Password Only:'}</span>
+            </div>
+            <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
+              {lang === 'ta'
+                ? 'வரவேற்பாளர் (111), அட்மின் 1 (123), அட்மின் 2 (456), சமுர்த்தி உத்தியோகத்தர் (604) மற்றும் நேரலை டிவி காட்சி (000) ஆகிய அனைவரும் தங்களுக்குரிய கடவுக்குறியீடு மூலமே உள்நுழைந்து இயங்குவர்.'
+                : 'Officers login using their assigned staff credentials without requiring personal Google accounts.'}
+            </p>
+          </div>
+
+          <div className="bg-slate-800/80 border border-slate-700 rounded-lg p-3">
+            <div className="font-bold text-indigo-300 flex items-center gap-1.5 text-xs">
+              <span>🖥️</span>
+              <span>{lang === 'ta' ? '2. தனிநபர் கூகிள் டிரைவ் தேவையில்லை:' : '2. No Individual Drives Needed:'}</span>
+            </div>
+            <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
+              {lang === 'ta'
+                ? 'சாதாரண அலுவலர்கள் எவரும் தங்களது தனிப்பட்ட ஜிமெயில் அல்லது டிரைவை இணைக்க வேண்டியதில்லை. அனைத்து தரவுகளும் மத்திய சர்வரில் (Central Database) தானாகவே ஒருமுகப்படுத்தப்படும்.'
+                : 'No staff member needs to authenticate their own personal Google Drive; all operations center on this master repository.'}
+            </p>
+          </div>
+
+          <div className="bg-slate-800/80 border border-slate-700 rounded-lg p-3">
+            <div className="font-bold text-indigo-300 flex items-center gap-1.5 text-xs">
+              <span>⚡</span>
+              <span>{lang === 'ta' ? '3. பல கணினிகள் நேரடி ஒத்திசைவு:' : '3. Real-Time Multi-PC Sync:'}</span>
+            </div>
+            <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
+              {lang === 'ta'
+                ? 'கவுண்டர் 1-ல் டோக்கன் வழங்கப்பட்டால், கவுண்டர் 2 அலுவலரின் திரையிலும், வரவேற்பக நேரலை டிவி திரையிலும் அது 10 வினாடிகளுக்குள் தானாகவே புதுப்பிக்கப்படும்!'
+                : 'Actions performed on any workstation automatically synchronize across all office PCs and the Live TV display.'}
+            </p>
+          </div>
+        </div>
+
+        {serverDbStatus?.counts && (
+          <div className="mt-3 pt-3 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-slate-400 font-mono flex-wrap gap-2">
+            <div>
+              <span>📊 Central Server Counts: </span>
+              <span className="text-white font-bold">{serverDbStatus.counts.citizens} Citizens</span> ·{' '}
+              <span className="text-white font-bold">{serverDbStatus.counts.tokens} Tokens</span> ·{' '}
+              <span className="text-white font-bold">{serverDbStatus.counts.assistance} Relief Records</span>
+            </div>
+            {serverDbStatus.lastModified && (
+              <div>
+                <span>Last Sync: {new Date(serverDbStatus.lastModified).toLocaleTimeString()}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {statusMessage && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-semibold">
           ✓ {statusMessage}
@@ -307,8 +452,188 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
       )}
 
       {errorMessage && (
-        <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-medium">
-          ⚠️ {errorMessage}
+        <div className="space-y-3">
+          <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-medium flex items-start gap-2">
+            <span className="text-base mt-0.5">⚠️</span>
+            <div className="flex-1">
+              <div className="font-bold">{lang === 'ta' ? 'கூகிள் டிரைவ் இணைப்புப் பிழை:' : 'Google Drive Authentication Error:'}</div>
+              <div className="font-mono text-[11px] mt-0.5 break-all">{errorMessage}</div>
+            </div>
+          </div>
+
+          {(errorMessage.toLowerCase().includes('unauthorized-domain') ||
+            errorMessage.toLowerCase().includes('unauthorized domain')) && (
+            <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl text-xs space-y-3 shadow-xs">
+              <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                <span>🛡️</span>
+                <span>
+                  {lang === 'ta'
+                    ? 'டொமைன் அனுமதி தேவை (Firebase Authorized Domain Setup)'
+                    : 'Action Required: Add Domain to Firebase Authorized Domains'}
+                </span>
+              </div>
+
+              <p className="text-amber-900/90 leading-relaxed text-[11px]">
+                {lang === 'ta'
+                  ? 'கூகிளின் பாதுகாப்பு விதிகளின்படி, இந்த செயலி இயங்கும் இணைய முகவரியை (Domain) உங்களது Firebase திட்டத்தில் (planar-grid-s3kqt) "Authorized Domains" பட்டியலில் ஒரு முறை சேர்க்க வேண்டும்.'
+                  : 'Google Firebase security requires the domain hosting this applet to be explicitly added to the "Authorized Domains" whitelist in your Firebase project (planar-grid-s3kqt).'}
+              </p>
+
+              <div className="bg-white border border-amber-200 rounded-lg p-3 space-y-2">
+                <div className="text-[11px] font-bold text-slate-700">
+                  {lang === 'ta' ? '1. கீழே உள்ள இணைய முகவரிகளை (Domains) நகலெடுக்கவும்:' : '1. Copy these domains to authorize:'}
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] text-slate-500 font-semibold w-24">
+                      {lang === 'ta' ? 'தற்போதைய தளம்:' : 'Current Domain:'}
+                    </span>
+                    <code className="px-2.5 py-1 bg-slate-100 text-slate-800 rounded font-mono text-xs border border-slate-300 select-all font-bold">
+                      {currentHostname}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(currentHostname);
+                        setCopiedDomain(true);
+                        setTimeout(() => setCopiedDomain(false), 2500);
+                      }}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-semibold text-[11px] transition-colors flex items-center gap-1 shadow-xs"
+                    >
+                      <span>{copiedDomain ? '✓' : '📋'}</span>
+                      <span>{copiedDomain ? (lang === 'ta' ? 'நகலெடுக்கப்பட்டது!' : 'Copied!') : (lang === 'ta' ? 'நகலெடு' : 'Copy')}</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] text-slate-500 font-semibold w-24">
+                      {lang === 'ta' ? 'Vercel டொமைன்:' : 'Vercel App:'}
+                    </span>
+                    <code className="px-2.5 py-1 bg-slate-100 text-slate-800 rounded font-mono text-xs border border-slate-300 select-all font-bold">
+                      vaharai-ds-bams.vercel.app
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText('vaharai-ds-bams.vercel.app');
+                        setCopiedDomain(true);
+                        setTimeout(() => setCopiedDomain(false), 2500);
+                      }}
+                      className="px-2.5 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded font-semibold text-[11px] transition-colors flex items-center gap-1 shadow-xs"
+                    >
+                      <span>📋</span>
+                      <span>{lang === 'ta' ? 'நகலெடு' : 'Copy'}</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] text-slate-500 font-semibold w-24">
+                      {lang === 'ta' ? 'அனைத்து Vercel:' : 'All Vercel:'}
+                    </span>
+                    <code className="px-2.5 py-1 bg-slate-100 text-slate-800 rounded font-mono text-xs border border-slate-300 select-all font-bold">
+                      vercel.app
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText('vercel.app');
+                        setCopiedDomain(true);
+                        setTimeout(() => setCopiedDomain(false), 2500);
+                      }}
+                      className="px-2.5 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded font-semibold text-[11px] transition-colors flex items-center gap-1 shadow-xs"
+                    >
+                      <span>📋</span>
+                      <span>{lang === 'ta' ? 'நகலெடு' : 'Copy'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-amber-200 rounded-lg p-3 space-y-2">
+                <div className="text-[11px] font-bold text-slate-700">
+                  {lang === 'ta' ? '2. Firebase Console-ல் சேர்க்கும் முறை:' : '2. How to add in Firebase Console:'}
+                </div>
+                <ol className="list-decimal list-inside text-[11px] text-slate-600 space-y-1.5 leading-relaxed">
+                  <li>
+                    {lang === 'ta' ? 'கீழே உள்ள பொத்தானை அழுத்தி Firebase Authentication அமைப்பைத் திறக்கவும்:' : 'Click below to open Firebase Authentication settings:'}
+                  </li>
+                  <li className="pl-4">
+                    <a
+                      href="https://console.firebase.google.com/project/planar-grid-s3kqt/authentication/settings"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold text-[11px] my-1"
+                    >
+                      <span>🔗</span>
+                      <span>Firebase Auth Settings (planar-grid-s3kqt)</span>
+                    </a>
+                  </li>
+                  <li>
+                    {lang === 'ta'
+                      ? 'அங்கே "Authorized domains" (அங்கீகரிக்கப்பட்ட களங்கள்) பகுதிக்குச் சென்று "Add domain" என்பதை அழுத்தவும்.'
+                      : 'Scroll to "Authorized domains" and click "Add domain".'}
+                  </li>
+                  <li>
+                    {lang === 'ta'
+                      ? `நகலெடுத்த "${currentHostname}" முகவரியை ஒட்டி "Save" செய்யவும்.`
+                      : `Paste "${currentHostname}" and click "Save".`}
+                  </li>
+                  <li>
+                    {lang === 'ta'
+                      ? 'சேமித்த பிறகு, மேலே உள்ள "கூகிள் கணக்குடன் இணைக்கவும்" பொத்தானை மீண்டும் அழுத்தவும்!'
+                      : 'After saving, return here and click "Connect with Google Account" again!'}
+                  </li>
+                </ol>
+              </div>
+
+              {/* Manual Token Option & Local Backup Reminder */}
+              <div className="pt-1 flex items-center justify-between gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowManualToken(!showManualToken)}
+                  className="text-[11px] text-amber-800 hover:underline font-semibold flex items-center gap-1"
+                >
+                  <span>🔑</span>
+                  <span>
+                    {showManualToken
+                      ? (lang === 'ta' ? 'கைமுறை டோக்கன் உள்ளீட்டை மறைக்கவும்' : 'Hide manual token input')
+                      : (lang === 'ta' ? 'Google Access Token நேரடியாக உள்ளிட வேண்டுமா?' : 'Enter Google Access Token manually?')}
+                  </span>
+                </button>
+
+                <span className="text-[10px] text-slate-500 font-medium">
+                  {lang === 'ta'
+                    ? '💡 குறிப்பு: கீழே உள்ள "கணினி உள்ளூர் காப்புப்பிரதி" (Local JSON) இணையம் அல்லது ஃபயர்பேஸ் அமைப்பு இன்றியும் 100% வேலை செய்யும்.'
+                    : '💡 Note: Local JSON backup below works 100% offline with zero cloud configuration.'}
+                </span>
+              </div>
+
+              {showManualToken && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+                  <label className="block text-[11px] font-bold text-slate-700">
+                    {lang === 'ta' ? 'கூகிள் அணுகல் டோக்கன் (Bearer Access Token):' : 'OAuth Access Token:'}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={manualTokenInput}
+                      onChange={(e) => setManualTokenInput(e.target.value)}
+                      placeholder="ya29.a0AfH6SM..."
+                      className="flex-1 px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyManualToken}
+                      disabled={!manualTokenInput.trim() || isLoading}
+                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded font-semibold text-xs"
+                    >
+                      {lang === 'ta' ? 'பயன்படுத்து' : 'Apply'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

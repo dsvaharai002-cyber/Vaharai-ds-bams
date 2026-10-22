@@ -13,6 +13,9 @@ import {
   logAuditAction,
   loadAssistanceRecords,
   saveAssistanceRecords,
+  fetchCentralDatabase,
+  pushToCentralDatabase,
+  restoreDatabaseFromSnapshot,
 } from './services/storage';
 import { getActiveUserSession, setActiveUserSession } from './services/auth';
 import { Header } from './components/Header';
@@ -66,6 +69,52 @@ export default function App() {
         setActiveUserSession(defaultSuperAdmin);
       }
     }
+  }, []);
+
+  // Central Server Real-Time Synchronization across multiple office computers
+  useEffect(() => {
+    let isMounted = true;
+    const syncInit = async () => {
+      try {
+        const central = await fetchCentralDatabase();
+        if (central && isMounted) {
+          restoreDatabaseFromSnapshot(central);
+          setUsers(loadUsers());
+          setBeneficiaries(loadBeneficiaries());
+          setTokens(loadTokens());
+          setDivisions(loadDivisions());
+          setAuditLogs(loadAuditLogs());
+          setAssistanceRecords(loadAssistanceRecords());
+        } else {
+          // Push initial client seed to central server on first boot
+          await pushToCentralDatabase();
+        }
+      } catch (err) {
+        console.warn('Initial central sync failed:', err);
+      }
+    };
+
+    syncInit();
+
+    // Polling every 10 seconds so Counter 1, Counter 2, and Live TV Display are always in sync
+    const syncInterval = setInterval(async () => {
+      try {
+        const central = await fetchCentralDatabase();
+        if (central && isMounted) {
+          if (Array.isArray(central.tokens)) setTokens(central.tokens);
+          if (Array.isArray(central.beneficiaries)) setBeneficiaries(central.beneficiaries);
+          if (Array.isArray(central.assistance)) setAssistanceRecords(central.assistance);
+          if (Array.isArray(central.auditLogs)) setAuditLogs(central.auditLogs);
+        }
+      } catch {
+        // offline fallback
+      }
+    }, 10000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(syncInterval);
+    };
   }, []);
 
   const handleLoginSuccess = (user: User) => {

@@ -40,22 +40,97 @@ export const initFirebaseAuth = (
   });
 };
 
-export const signInWithGoogleDrive = async (): Promise<{ user: FirebaseUser; accessToken: string }> => {
+export const signInWithGoogleDrive = async (): Promise<{ user: { email?: string | null; displayName?: string | null }; accessToken: string }> => {
+  isSigningIn = true;
   try {
-    isSigningIn = true;
+    // Attempt standard Firebase Auth popup
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
-      throw new Error('Could not obtain Google Drive access token');
+      throw new Error('Could not obtain Google Drive access token from credential');
     }
     cachedAccessToken = credential.accessToken;
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (err: any) {
-    console.error('Google sign in error:', err);
+    console.warn('Firebase sign-in error, testing fallback options:', err);
+
+    // If unauthorized-domain error, try Google Identity Services (GIS) token client if loaded
+    if (
+      err.code === 'auth/unauthorized-domain' ||
+      err.message?.includes('auth/unauthorized-domain') ||
+      err.message?.includes('unauthorized domain')
+    ) {
+      if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
+        try {
+          const gisResult = await requestAccessTokenViaGis();
+          return gisResult;
+        } catch (gisErr: any) {
+          console.error('GIS fallback also failed:', gisErr);
+        }
+      }
+    }
+
     throw err;
   } finally {
     isSigningIn = false;
   }
+};
+
+const requestAccessTokenViaGis = async (): Promise<{ user: { email: string; displayName: string }; accessToken: string }> => {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !(window as any).google?.accounts?.oauth2) {
+      reject(new Error('Google Identity Services library is not loaded.'));
+      return;
+    }
+    const oAuthClientId = (firebaseConfig as any).oAuthClientId;
+    if (!oAuthClientId) {
+      reject(new Error('No oAuthClientId configured in firebase-applet-config.json'));
+      return;
+    }
+
+    try {
+      const client = (window as any).google.accounts.oauth2.initTokenClient({
+        client_id: oAuthClientId,
+        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
+        callback: async (resp: any) => {
+          if (resp.error) {
+            reject(new Error(resp.error_description || resp.error));
+            return;
+          }
+          if (resp.access_token) {
+            cachedAccessToken = resp.access_token;
+            let email = 'Google Account';
+            let displayName = 'Drive User';
+            try {
+              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${resp.access_token}` },
+              });
+              if (res.ok) {
+                const info = await res.json();
+                email = info.email || email;
+                displayName = info.name || displayName;
+              }
+            } catch {
+              // fallback
+            }
+            resolve({
+              user: { email, displayName },
+              accessToken: resp.access_token,
+            });
+          } else {
+            reject(new Error('No access token received from Google Identity Services'));
+          }
+        },
+      });
+      client.requestAccessToken({ prompt: 'consent' });
+    } catch (e) {
+      reject(e);
+    }
+  });
+};
+
+export const setGoogleAccessToken = (token: string | null) => {
+  cachedAccessToken = token;
 };
 
 export const getGoogleAccessToken = (): string | null => {
@@ -63,7 +138,11 @@ export const getGoogleAccessToken = (): string | null => {
 };
 
 export const disconnectGoogleDrive = async () => {
-  await signOut(auth);
+  try {
+    await signOut(auth);
+  } catch {
+    // ignore
+  }
   cachedAccessToken = null;
 };
 

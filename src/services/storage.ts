@@ -611,7 +611,10 @@ export const loadUsers = (): User[] => {
   }
   return merged;
 };
-export const saveUsers = (users: User[]) => setStoredData(STORAGE_KEYS.USERS, users);
+export const saveUsers = (users: User[]) => {
+  setStoredData(STORAGE_KEYS.USERS, users);
+  scheduleCentralSync();
+};
 
 export const loadBeneficiaries = (): Beneficiary[] => {
   const stored = getStoredData<Beneficiary[]>(STORAGE_KEYS.BENEFICIARIES, DEFAULT_BENEFICIARIES);
@@ -639,7 +642,10 @@ export const loadBeneficiaries = (): Beneficiary[] => {
   }
   return enriched;
 };
-export const saveBeneficiaries = (items: Beneficiary[]) => setStoredData(STORAGE_KEYS.BENEFICIARIES, items);
+export const saveBeneficiaries = (items: Beneficiary[]) => {
+  setStoredData(STORAGE_KEYS.BENEFICIARIES, items);
+  scheduleCentralSync();
+};
 
 export const loadTokens = (): QueueToken[] => {
   const stored = getStoredData<QueueToken[]>(STORAGE_KEYS.TOKENS, DEFAULT_TOKENS);
@@ -661,7 +667,10 @@ export const loadTokens = (): QueueToken[] => {
   }
   return enriched;
 };
-export const saveTokens = (tokens: QueueToken[]) => setStoredData(STORAGE_KEYS.TOKENS, tokens);
+export const saveTokens = (tokens: QueueToken[]) => {
+  setStoredData(STORAGE_KEYS.TOKENS, tokens);
+  scheduleCentralSync();
+};
 
 export const loadDivisions = (): GNDivision[] => {
   const stored = getStoredData<GNDivision[]>(STORAGE_KEYS.DIVISIONS, DEFAULT_DIVISIONS);
@@ -674,7 +683,10 @@ export const loadDivisions = (): GNDivision[] => {
   }
   return stored;
 };
-export const saveDivisions = (divs: GNDivision[]) => setStoredData(STORAGE_KEYS.DIVISIONS, divs);
+export const saveDivisions = (divs: GNDivision[]) => {
+  setStoredData(STORAGE_KEYS.DIVISIONS, divs);
+  scheduleCentralSync();
+};
 
 export const loadAuditLogs = (): SystemAuditLog[] => getStoredData<SystemAuditLog[]>(STORAGE_KEYS.AUDIT_LOGS, []);
 export const logAuditAction = (userId: string, userName: string, action: string, details: string) => {
@@ -688,6 +700,7 @@ export const logAuditAction = (userId: string, userName: string, action: string,
     details,
   };
   saveStoredData(STORAGE_KEYS.AUDIT_LOGS, [entry, ...current.slice(0, 499)]);
+  scheduleCentralSync();
 };
 
 const saveStoredData = <T>(key: string, data: T) => setStoredData(key, data);
@@ -791,6 +804,7 @@ export const loadAssistanceRecords = (): AssistanceRecord[] => {
 
 export const saveAssistanceRecords = (records: AssistanceRecord[]) => {
   setStoredData(STORAGE_KEYS.ASSISTANCE, records);
+  scheduleCentralSync();
 };
 
 // ================= DUPLICATE AID DETECTION & PREVENTION ENGINE ================= //
@@ -880,11 +894,60 @@ export const restoreDatabaseFromSnapshot = (snapshot: any): boolean => {
   if (!snapshot || !snapshot.beneficiaries || !snapshot.users) {
     throw new Error('Invalid backup file structure.');
   }
-  if (Array.isArray(snapshot.users)) saveUsers(snapshot.users);
-  if (Array.isArray(snapshot.beneficiaries)) saveBeneficiaries(snapshot.beneficiaries);
-  if (Array.isArray(snapshot.tokens)) saveTokens(snapshot.tokens);
-  if (Array.isArray(snapshot.divisions)) saveDivisions(snapshot.divisions);
-  if (Array.isArray(snapshot.assistance)) saveAssistanceRecords(snapshot.assistance);
-  if (Array.isArray(snapshot.auditLogs)) saveStoredData(STORAGE_KEYS.AUDIT_LOGS, snapshot.auditLogs);
+  if (Array.isArray(snapshot.users)) setStoredData(STORAGE_KEYS.USERS, snapshot.users);
+  if (Array.isArray(snapshot.beneficiaries)) setStoredData(STORAGE_KEYS.BENEFICIARIES, snapshot.beneficiaries);
+  if (Array.isArray(snapshot.tokens)) setStoredData(STORAGE_KEYS.TOKENS, snapshot.tokens);
+  if (Array.isArray(snapshot.divisions)) setStoredData(STORAGE_KEYS.DIVISIONS, snapshot.divisions);
+  if (Array.isArray(snapshot.assistance)) setStoredData(STORAGE_KEYS.ASSISTANCE, snapshot.assistance);
+  if (Array.isArray(snapshot.auditLogs)) setStoredData(STORAGE_KEYS.AUDIT_LOGS, snapshot.auditLogs);
   return true;
+};
+
+// ================= CENTRAL SERVER DATABASE SYNCHRONIZATION ================= //
+let syncDebounceTimer: any = null;
+
+export const scheduleCentralSync = () => {
+  if (typeof window === 'undefined') return;
+  if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+  syncDebounceTimer = setTimeout(() => {
+    pushToCentralDatabase();
+  }, 800);
+};
+
+export const fetchCentralDatabase = async (): Promise<any | null> => {
+  try {
+    const res = await fetch('/api/database');
+    if (!res.ok) return null;
+    const body = await res.json();
+    if (body.success && body.data) {
+      return body.data;
+    }
+    return null;
+  } catch (err) {
+    return null;
+  }
+};
+
+export const pushToCentralDatabase = async (snapshot?: any): Promise<boolean> => {
+  try {
+    const data = snapshot || createDatabaseSnapshot();
+    const res = await fetch('/api/database', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.ok;
+  } catch (err) {
+    return false;
+  }
+};
+
+export const getCentralDatabaseStatus = async (): Promise<any | null> => {
+  try {
+    const res = await fetch('/api/database/status');
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
 };

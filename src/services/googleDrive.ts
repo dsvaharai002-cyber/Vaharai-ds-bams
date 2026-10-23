@@ -2,8 +2,8 @@ import { getGoogleAccessToken, isGoogleDriveAuthenticated } from './auth';
 import { DriveBackupItem } from '../types';
 import { parseBeneficiariesFromCsv } from './csv';
 
-export const DEFAULT_DESIGNATED_FILE_ID = '1oEDEnf1xa-7FQm89Wz9hgVBGWiF5Ylr2';
-export const DEFAULT_DESIGNATED_FILE_URL = 'https://drive.google.com/file/d/1oEDEnf1xa-7FQm89Wz9hgVBGWiF5Ylr2/view?usp=sharing';
+export const DEFAULT_DESIGNATED_FILE_ID = '1VX3QJz7XeAP2dABPAC276qwnpRiW4r4L';
+export const DEFAULT_DESIGNATED_FILE_URL = 'https://drive.google.com/file/d/1VX3QJz7XeAP2dABPAC276qwnpRiW4r4L/view?usp=sharing';
 
 const STORAGE_KEYS = {
   DESIGNATED_FILE_ID: 'vaharai_ds_designated_drive_file_id',

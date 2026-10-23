@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Beneficiary, QueueToken, GNDivision, SystemAuditLog, AssistanceRecord } from './types';
+import { User, Beneficiary, QueueToken, GNDivision, SystemAuditLog, AssistanceRecord, ServiceDefinition } from './types';
 import { Language } from './translations/i18n';
 import {
   loadUsers,
@@ -13,6 +13,8 @@ import {
   logAuditAction,
   loadAssistanceRecords,
   saveAssistanceRecords,
+  loadServices,
+  saveServices,
   fetchCentralDatabase,
   pushToCentralDatabase,
   restoreDatabaseFromSnapshot,
@@ -46,6 +48,7 @@ import { DriveBackupView } from './components/DriveBackupView';
 import { AiReportView } from './components/AiReportView';
 import { ServiceAuditView } from './components/ServiceAuditView';
 import { AssistanceDistributionView } from './components/AssistanceDistributionView';
+import { ServiceManagementView } from './components/ServiceManagementView';
 import { BarcodeScannerModal } from './components/BarcodeScannerModal';
 import { Sidebar } from './components/Sidebar';
 
@@ -61,6 +64,7 @@ export default function App() {
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>(() => loadBeneficiaries());
   const [tokens, setTokens] = useState<QueueToken[]>(() => loadTokens());
   const [divisions, setDivisions] = useState<GNDivision[]>(() => loadDivisions());
+  const [services, setServices] = useState<ServiceDefinition[]>(() => loadServices());
   const [auditLogs, setAuditLogs] = useState<SystemAuditLog[]>(() => loadAuditLogs());
   const [assistanceRecords, setAssistanceRecords] = useState<AssistanceRecord[]>(() => loadAssistanceRecords());
 
@@ -310,11 +314,17 @@ export default function App() {
     saveAssistanceRecords(newRecords);
   };
 
+  const handleUpdateServices = (newServices: ServiceDefinition[]) => {
+    setServices(newServices);
+    saveServices(newServices);
+  };
+
   const handleDatabaseReload = () => {
     setUsers(loadUsers());
     setBeneficiaries(loadBeneficiaries());
     setTokens(loadTokens());
     setDivisions(loadDivisions());
+    setServices(loadServices());
     setAuditLogs(loadAuditLogs());
     setAssistanceRecords(loadAssistanceRecords());
   };
@@ -466,6 +476,8 @@ export default function App() {
       ? 'live-display'
       : currentTab === 'staff' && !isSuperAdmin
       ? 'dashboard'
+      : currentTab === 'services' && !isSuperAdmin
+      ? 'dashboard'
       : currentTab === 'beneficiaries' && isReception
       ? 'reception'
       : currentTab === 'assistance' && (isReception || isNormal)
@@ -555,12 +567,15 @@ export default function App() {
             tokens={tokens}
             beneficiaries={beneficiaries}
             divisions={divisions}
+            services={services}
             currentUser={currentUser}
             lang={lang}
             onUpdateTokens={handleUpdateTokens}
             onUpdateBeneficiaries={handleUpdateBeneficiaries}
+            onUpdateServices={handleUpdateServices}
             onAuditLog={handleAuditLog}
             onNavigateToLiveDisplay={() => setCurrentTab('live-display')}
+            onNavigateToServices={() => setCurrentTab('services')}
           />
         )}
 
@@ -573,6 +588,16 @@ export default function App() {
             onUpdateTokens={handleUpdateTokens}
             onAuditLog={handleAuditLog}
             isNormalUser={isNormal}
+          />
+        )}
+
+        {safeTab === 'services' && (
+          <ServiceManagementView
+            services={services}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdateServices={handleUpdateServices}
+            onAuditLog={handleAuditLog}
           />
         )}
 

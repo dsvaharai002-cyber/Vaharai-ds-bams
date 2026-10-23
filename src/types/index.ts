@@ -95,13 +95,23 @@ export interface Beneficiary {
   updatedAt: string;
 }
 
-export type ServiceType = 
-  | 'LAND_PERMIT' 
-  | 'WELFARE_SCHEME' 
-  | 'CIVIL_REGISTRATION' 
-  | 'GRAMA_CERTIFICATE' 
-  | 'PUBLIC_ASSISTANCE' 
-  | 'GENERAL_INQUIRY';
+export interface ServiceDefinition {
+  id: string; // e.g. "SRV-WELFARE", "SRV-LAND", or "SRV-CUSTOM-..."
+  code: string; // e.g. "WELFARE_SCHEME", "LAND_PERMIT", "AGRI_PERMIT", etc.
+  nameTa: string; // Service name in Tamil
+  nameEn: string; // Service name in English
+  counterNo: number; // Counter number e.g. 1-10
+  prefix: string; // Token prefix e.g. "W", "L", "AG"
+  defaultOfficerTa: string; // Default officer in Tamil
+  defaultOfficerEn: string; // Default officer in English
+  descriptionTa?: string;
+  descriptionEn?: string;
+  isActive: boolean;
+  isCustom?: boolean;
+  createdAt: string;
+}
+
+export type ServiceType = string;
 
 export type TokenStatus = 'WAITING' | 'CALLING' | 'SERVING' | 'COMPLETED' | 'CANCELLED';
 

@@ -1,40 +1,49 @@
 import React, { useState, useEffect } from 'react';
-import { QueueToken, ServiceType, TokenStatus, Beneficiary, GNDivision, User, TokenForwardRecord } from '../types';
+import { QueueToken, ServiceType, TokenStatus, Beneficiary, GNDivision, User, TokenForwardRecord, ServiceDefinition } from '../types';
 import { Language, translations } from '../translations/i18n';
 import { ThermalPrintReceipt } from './ThermalPrintReceipt';
 import { VaharaiLogo } from './VaharaiLogo';
 import { CitizenProfileModal } from './CitizenProfileModal';
 import { BeneficiaryIdCardModal } from './BeneficiaryIdCardModal';
-import { generateSystemCitizenId, generateProvisionalNic } from '../services/storage';
+import { generateSystemCitizenId, generateProvisionalNic, DEFAULT_SERVICES } from '../services/storage';
 
 interface ReceptionTokenViewProps {
   tokens: QueueToken[];
   beneficiaries: Beneficiary[];
   divisions: GNDivision[];
+  services?: ServiceDefinition[];
   currentUser?: User;
   lang: Language;
   onUpdateTokens: (tokens: QueueToken[]) => void;
   onUpdateBeneficiaries?: (items: Beneficiary[]) => void;
+  onUpdateServices?: (services: ServiceDefinition[]) => void;
   onAuditLog: (action: string, details: string) => void;
   onNavigateToLiveDisplay?: () => void;
+  onNavigateToServices?: () => void;
 }
 
 export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
   tokens,
   beneficiaries,
   divisions,
+  services,
   currentUser,
   lang,
   onUpdateTokens,
   onUpdateBeneficiaries,
+  onUpdateServices,
   onAuditLog,
   onNavigateToLiveDisplay,
+  onNavigateToServices,
 }) => {
   const t = translations[lang];
+  const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
+
+  const availableServices = (services && services.length > 0) ? services.filter((s) => s.isActive) : DEFAULT_SERVICES;
 
   // Token Issuing Form State
-  const [selectedService, setSelectedService] = useState<ServiceType>('WELFARE_SCHEME');
-  const [officerToMeet, setOfficerToMeet] = useState<string>('அட்மின் 1 (Admin 1)');
+  const [selectedService, setSelectedService] = useState<ServiceType>(availableServices[0]?.code || 'WELFARE_SCHEME');
+  const [officerToMeet, setOfficerToMeet] = useState<string>('அட்மின் 01 (Admin 1)');
   const [citizenNic, setCitizenNic] = useState('');
   const [citizenName, setCitizenName] = useState('');
   const [citizenNameEn, setCitizenNameEn] = useState('');
@@ -42,6 +51,14 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
   const [citizenAddress, setCitizenAddress] = useState('');
   const [citizenFamilyCode, setCitizenFamilyCode] = useState('');
   const [selectedDivision, setSelectedDivision] = useState('211');
+
+  // Search feature for "யாரை பார்க்க வேண்டும்" (Whom to Meet)
+  const [officerSearchQuery, setOfficerSearchQuery] = useState('');
+  const [showOfficerDropdown, setShowOfficerDropdown] = useState(false);
+
+  // Queue List Filter & Search by Officer to Meet
+  const [queueOfficerFilter, setQueueOfficerFilter] = useState('ALL');
+  const [queueSearchQuery, setQueueSearchQuery] = useState('');
 
   // Specialized Category Checkboxes for New Citizen Registration
   const [showCitizenRegPanel, setShowCitizenRegPanel] = useState<boolean>(false);
@@ -58,19 +75,54 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
   const [selectedTokenForDetails, setSelectedTokenForDetails] = useState<QueueToken | null>(null);
   const [selectedBeneficiaryForCard, setSelectedBeneficiaryForCard] = useState<Beneficiary | null>(null);
 
+  // Super Admin Token Edit Modal State
+  const [selectedTokenForEdit, setSelectedTokenForEdit] = useState<QueueToken | null>(null);
+
   // Notes Modal State
   const [selectedTokenForNotes, setSelectedTokenForNotes] = useState<QueueToken | null>(null);
   const [notesDraft, setNotesDraft] = useState<string>('');
 
   // Forward Token Modal State
   const [selectedTokenForForward, setSelectedTokenForForward] = useState<QueueToken | null>(null);
-  const [forwardTargetOfficer, setForwardTargetOfficer] = useState<string>('அட்மின் 1 (Admin 1)');
+  const [forwardTargetOfficer, setForwardTargetOfficer] = useState<string>('அட்மின் 01 (Admin 1)');
   const [forwardReason, setForwardReason] = useState<string>('');
 
   // Complete Token Modal with Star Rating
   const [selectedTokenForComplete, setSelectedTokenForComplete] = useState<QueueToken | null>(null);
   const [completionRating, setCompletionRating] = useState<number>(5);
   const [completionFeedback, setCompletionFeedback] = useState<string>('');
+
+  // Comprehensive Directory of Officers for Search & Selection
+  const officerDirectory = [
+    { nameTa: 'அட்மின் 01 (Admin 1)', nameEn: 'Admin 1 (Administrative Officer 01)', roleTa: 'நிர்வாக உத்தியோகத்தர் 01', roleEn: 'Administrative Officer 01', deptTa: 'பொதுமக்கள் சேவை & ஒருங்கிணைப்பு', deptEn: 'Public Service & Administration', icon: '👔' },
+    { nameTa: 'அட்மின் 02 (Admin 2)', nameEn: 'Admin 2 (Administrative Officer 02)', roleTa: 'நிர்வாக உத்தியோகத்தர் 02', roleEn: 'Administrative Officer 02', deptTa: 'நலன்புரி & இடர் நிவாரணப் பிரிவு', deptEn: 'Welfare & Disaster Relief Branch', icon: '👔' },
+    { nameTa: 'பிரதேச செயலாளர் (Super Admin)', nameEn: 'Divisional Secretary (Super Admin)', roleTa: 'தலைமை நிர்வாகி / பிரதேச செயலாளர்', roleEn: 'Divisional Secretary (Super Admin)', deptTa: 'நிர்வாக தலைமைப் பிரிவு', deptEn: 'Executive Branch', icon: '🏛️' },
+    { nameTa: 'காணி பிரிவு உத்தியோகத்தர்', nameEn: 'Land Officer', roleTa: 'காணி பயன்பாட்டு உத்தியோகத்தர்', roleEn: 'Land Officer', deptTa: 'காணி பயன்பாட்டுப் பிரிவு', deptEn: 'Land Branch', icon: '🗺️' },
+    { nameTa: 'கணக்காளர் / நிதிப் பிரிவு', nameEn: 'Accountant / Finance Branch', roleTa: 'தலைமை கணக்காளர்', roleEn: 'Chief Accountant', deptTa: 'கணக்கு மற்றும் நிதிப் பிரிவு', deptEn: 'Finance & Accounts', icon: '💰' },
+    { nameTa: 'அஸ்வெசும / சமூர்த்தி உத்தியோகத்தர்', nameEn: 'Aswesuma / Samurdhi Officer', roleTa: 'சமூர்த்தி நலன்புரி உத்தியோகத்தர்', roleEn: 'Samurdhi Welfare Officer', deptTa: 'சமூக நலன்புரி சபை', deptEn: 'Social Welfare Board', icon: '🤝' },
+    { nameTa: 'பிறப்பு/இறப்பு பதிவாளர் (Civil Registrar)', nameEn: 'Civil Registrar Officer', roleTa: 'பிறப்பு / இறப்பு / விவாக பதிவாளர்', roleEn: 'Civil Registrar', deptTa: 'பதிவாளர் நாயகம் திணைக்களம்', deptEn: 'Registrar General Division', icon: '📜' },
+    { nameTa: 'கிராம அலுவலர் (Grama Niladhari)', nameEn: 'Grama Niladhari Officer', roleTa: 'கிராம நிர்வாக உத்தியோகத்தர்', roleEn: 'Grama Niladhari', deptTa: 'கிராம நிர்வாகப் பிரிவு', deptEn: 'Village Field Administration', icon: '🌾' },
+    { nameTa: 'விவசாய அபிவிருத்தி உத்தியோகத்தர்', nameEn: 'Agriculture Development Officer', roleTa: 'விவசாய உத்தியோகத்தர்', roleEn: 'Agriculture Officer', deptTa: 'விவசாய சேவைகள் பிரிவு', deptEn: 'Agrarian Services', icon: '🌱' },
+    { nameTa: 'கடற்றொழில் பரிசோதகர் / உத்தியோகத்தர்', nameEn: 'Fisheries Inspector / Officer', roleTa: 'கடற்றொழில் உத்தியோகத்தர்', roleEn: 'Fisheries Officer', deptTa: 'கடற்றொழில் திணைக்களப் பிரிவு', deptEn: 'Fisheries Branch', icon: '🐟' },
+    { nameTa: 'ECDO (கர்ப்பிணித் தாய்மார்கள் பதிவாளர்)', nameEn: 'Early Childhood Development Officer', roleTa: 'சிறுவர் அபிவிருத்தி உத்தியோகத்தர்', roleEn: 'ECDO', deptTa: 'சிறுவர் மகளிர் பிரிவு', deptEn: 'Child & Women Affairs', icon: '🤰' },
+    { nameTa: 'அங்கவீனர் பதிவாளர்', nameEn: 'Disability Rights & Welfare Officer', roleTa: 'மாற்றுத்திறனாளிகள் நலன்புரி உத்தியோகத்தர்', roleEn: 'Disability Rights Officer', deptTa: 'சமூக சேவைகள் பிரிவு', deptEn: 'Social Services', icon: '♿' },
+    { nameTa: 'பெண் தலைமைத்துவ குடும்ப உத்தியோகத்தர்', nameEn: 'Women Headed Household Officer', roleTa: 'மகளிர் விவகார உத்தியோகத்தர்', roleEn: 'Women Headed Household Officer', deptTa: 'மகளிர் விவகாரப் பிரிவு', deptEn: 'Women Affairs', icon: '👩‍👧' },
+    { nameTa: 'பொதுமக்கள் வழிகாட்டல் உத்தியோகத்தர்', nameEn: 'Public Service Desk Officer', roleTa: 'தகவல் மற்றும் வழிகாட்டல் அலுவலர்', roleEn: 'Information Desk Officer', deptTa: 'வரவேற்பக தகவல் பிரிவு', deptEn: 'Front Desk', icon: 'ℹ️' },
+  ];
+
+  // Filtered officers for searchable dropdown
+  const filteredOfficers = officerDirectory.filter((off) => {
+    if (!officerSearchQuery.trim()) return true;
+    const q = officerSearchQuery.toLowerCase().trim();
+    return (
+      off.nameTa.toLowerCase().includes(q) ||
+      off.nameEn.toLowerCase().includes(q) ||
+      off.roleTa.toLowerCase().includes(q) ||
+      off.roleEn.toLowerCase().includes(q) ||
+      off.deptTa.toLowerCase().includes(q) ||
+      off.deptEn.toLowerCase().includes(q)
+    );
+  });
 
   // Live Timer for dynamic waiting time calculation
   const [nowTime, setNowTime] = useState<number>(Date.now());
@@ -105,20 +157,30 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
   };
 
   const getServicePrefix = (service: ServiceType): { prefix: string; counter: number; labelTa: string; labelEn: string; defaultOfficer: string } => {
+    const customMatch = availableServices.find((s) => s.code === service);
+    if (customMatch) {
+      return {
+        prefix: customMatch.prefix,
+        counter: customMatch.counterNo,
+        labelTa: customMatch.nameTa,
+        labelEn: customMatch.nameEn,
+        defaultOfficer: lang === 'ta' ? customMatch.defaultOfficerTa : customMatch.defaultOfficerEn,
+      };
+    }
     switch (service) {
       case 'LAND_PERMIT':
-        return { prefix: 'L', counter: 2, labelTa: t.serviceLand, labelEn: 'Land Permits & Boundary Inquiries', defaultOfficer: 'அட்மின் 1 (Admin 1)' };
+        return { prefix: 'L', counter: 2, labelTa: t.serviceLand, labelEn: 'Land Permits & Boundary Inquiries', defaultOfficer: 'அட்மின் 01 (Admin 1)' };
       case 'WELFARE_SCHEME':
-        return { prefix: 'W', counter: 4, labelTa: t.serviceWelfare, labelEn: 'Aswesuma & Samurdhi Welfare', defaultOfficer: 'அட்மின் 2 (Admin 2)' };
+        return { prefix: 'W', counter: 4, labelTa: t.serviceWelfare, labelEn: 'Aswesuma & Samurdhi Welfare', defaultOfficer: 'அட்மின் 02 (Admin 2)' };
       case 'CIVIL_REGISTRATION':
         return { prefix: 'C', counter: 1, labelTa: t.serviceCivil, labelEn: 'Birth / Death / Marriage Registration', defaultOfficer: 'பிறப்பு/இறப்பு பதிவாளர் (Civil Registrar)' };
       case 'GRAMA_CERTIFICATE':
         return { prefix: 'G', counter: 3, labelTa: t.serviceGramaCert, labelEn: 'Grama Niladhari Certificates', defaultOfficer: 'கிராம அலுவலர் (Grama Niladhari)' };
       case 'PUBLIC_ASSISTANCE':
-        return { prefix: 'P', counter: 5, labelTa: t.servicePublicAssist, labelEn: 'Public Assistance & Relief', defaultOfficer: 'அட்மின் 2 (Admin 2)' };
+        return { prefix: 'P', counter: 5, labelTa: t.servicePublicAssist, labelEn: 'Public Assistance & Relief', defaultOfficer: 'அட்மின் 02 (Admin 2)' };
       case 'GENERAL_INQUIRY':
       default:
-        return { prefix: 'A', counter: 6, labelTa: t.serviceGeneral, labelEn: 'General Guidance & Inquiries', defaultOfficer: 'அட்மின் 1 (Admin 1)' };
+        return { prefix: 'A', counter: 6, labelTa: t.serviceGeneral, labelEn: 'General Guidance & Inquiries', defaultOfficer: 'அட்மின் 01 (Admin 1)' };
     }
   };
 
@@ -317,6 +379,39 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
     onAuditLog('UPDATE_TOKEN_STATUS', `Token ${token?.tokenNumber} status changed to ${nextStatus}`);
   };
 
+  // Super Admin Token Delete & Clear Queue Tools
+  const handleDeleteToken = (tokenId: string) => {
+    if (!isSuperAdmin && currentUser?.role !== 'ADMIN 1' && currentUser?.role !== 'ADMIN 2') return;
+    const confirmMsg = lang === 'ta'
+      ? 'இந்த டோக்கனை நிச்சயமாக நீக்க வேண்டுமா?'
+      : 'Are you sure you want to delete this token?';
+    if (!window.confirm(confirmMsg)) return;
+
+    const tok = tokens.find((tItem) => tItem.id === tokenId);
+    const updated = tokens.filter((tItem) => tItem.id !== tokenId);
+    onUpdateTokens(updated);
+    onAuditLog('DELETE_TOKEN', `Deleted token ${tok?.tokenNumber || tokenId} for ${tok?.officerToMeet}`);
+  };
+
+  const handleClearAllTokens = () => {
+    if (!isSuperAdmin) return;
+    const confirmMsg = lang === 'ta'
+      ? 'கவனம்: காத்திருப்பு மற்றும் சேவை முடிந்த அனைத்து டோக்கன்களும் நிரந்தரமாக அழிக்கப்படும். தொடரவா?'
+      : 'Caution: All queue tokens will be permanently erased. Proceed?';
+    if (!window.confirm(confirmMsg)) return;
+
+    onUpdateTokens([]);
+    onAuditLog('CLEAR_ALL_TOKENS', `Super Admin (${currentUser?.name}) erased all queue tokens`);
+    alert(lang === 'ta' ? 'அனைத்து டோக்கன்களும் வெற்றிகரமாக அழிக்கப்பட்டன.' : 'All tokens cleared successfully.');
+  };
+
+  const handleSaveEditedToken = (edited: QueueToken) => {
+    const updated = tokens.map((tItem) => (tItem.id === edited.id ? edited : tItem));
+    onUpdateTokens(updated);
+    onAuditLog('EDIT_TOKEN', `Super Admin edited token ${edited.tokenNumber} for ${edited.officerToMeet}`);
+    setSelectedTokenForEdit(null);
+  };
+
   // Handle Save Token Notes
   const handleSaveNotes = () => {
     if (!selectedTokenForNotes) return;
@@ -422,6 +517,26 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
   const activeCallingTokens = tokens.filter((tItem) => tItem.status === 'CALLING' || tItem.status === 'SERVING');
   const completedTokens = tokens.filter((tItem) => tItem.status === 'COMPLETED');
 
+  // Filtered waiting tokens based on "யாரை பார்க்க வேண்டும்" (Whom to Meet) search & filter
+  const filteredWaitingTokens = waitingTokens.filter((tok) => {
+    if (queueOfficerFilter !== 'ALL') {
+      if (tok.officerToMeet !== queueOfficerFilter && !tok.officerToMeet?.includes(queueOfficerFilter)) {
+        return false;
+      }
+    }
+    if (queueSearchQuery.trim()) {
+      const q = queueSearchQuery.toLowerCase().trim();
+      const matchCitizen = (tok.citizenName || '').toLowerCase().includes(q);
+      const matchNic = (tok.citizenNic || '').toLowerCase().includes(q);
+      const matchToken = tok.tokenNumber.toLowerCase().includes(q);
+      const matchOfficer = (tok.officerToMeet || '').toLowerCase().includes(q);
+      if (!matchCitizen && !matchNic && !matchToken && !matchOfficer) {
+        return false;
+      }
+    }
+    return true;
+  });
+
   const matchedBeneficiary = selectedTokenForDetails
     ? getBeneficiaryForToken(selectedTokenForDetails)
     : null;
@@ -490,79 +605,196 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
           </div>
 
           <form onSubmit={handleIssueTokenSubmit} className="space-y-3.5">
-            {/* 1. Required Service */}
+            {/* 1. Required Service (Dynamic Services Support) */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                {t.selectService} *
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-700">
+                  {t.selectService} *
+                </label>
+                {isSuperAdmin && onNavigateToServices && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToServices}
+                    className="text-[10px] text-emerald-800 font-bold hover:underline flex items-center gap-1"
+                  >
+                    <span>⚙️</span>
+                    <span>{lang === 'ta' ? '+ புதிய சேவை சேர்க்க' : '+ Add Service'}</span>
+                  </button>
+                )}
+              </div>
               <select
                 value={selectedService}
                 onChange={(e) => handleServiceChange(e.target.value as ServiceType)}
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none font-medium"
               >
-                <option value="WELFARE_SCHEME">W - {t.serviceWelfare} (Counter 4)</option>
-                <option value="LAND_PERMIT">L - {t.serviceLand} (Counter 2)</option>
-                <option value="CIVIL_REGISTRATION">C - {t.serviceCivil} (Counter 1)</option>
-                <option value="GRAMA_CERTIFICATE">G - {t.serviceGramaCert} (Counter 3)</option>
-                <option value="PUBLIC_ASSISTANCE">P - {t.servicePublicAssist} (Counter 5)</option>
-                <option value="GENERAL_INQUIRY">A - {t.serviceGeneral} (Counter 6)</option>
+                {availableServices.map((srv) => (
+                  <option key={srv.id || srv.code} value={srv.code}>
+                    {srv.prefix} - {lang === 'ta' ? srv.nameTa : srv.nameEn} ({t.counter} {srv.counterNo})
+                  </option>
+                ))}
               </select>
             </div>
 
-            {/* 2. CRITICAL: யாரை பார்க்க வேண்டும்? (Whom to meet?) */}
-            <div className="p-3 bg-amber-50/70 border border-amber-300 rounded-xl space-y-2">
-              <label className="block text-xs font-bold text-amber-950 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <span className="text-sm">❓</span>
-                  <span>{lang === 'ta' ? 'யாரை பார்க்க வேண்டும்? (Whom to Meet)' : 'Whom do you want to see? *'}</span>
-                </span>
+            {/* 2. CRITICAL: யாரை பார்க்க வேண்டும்? Searchable Officer Combobox (Requirement 3) */}
+            <div className="p-3 bg-amber-50/70 border border-amber-300 rounded-xl space-y-2 relative">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                  <span className="text-sm">🔍</span>
+                  <span>{t.officerToMeet}</span>
+                </label>
                 <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-mono font-bold">
-                  கட்டாயம்
+                  {lang === 'ta' ? 'தேடுதல் வசதியுடன்' : 'Searchable'}
                 </span>
-              </label>
+              </div>
 
-              <select
-                value={officerToMeet}
-                onChange={(e) => setOfficerToMeet(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-amber-300 rounded-lg bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none font-bold text-slate-900"
-              >
-                <option value="அட்மின் 1 (Admin 1)">👔 அட்மின் 01 (Admin 1 - நிர்வாக உத்தியோகத்தர் 01)</option>
-                <option value="அட்மின் 2 (Admin 2)">👔 அட்மின் 02 (Admin 2 - நிர்வாக உத்தியோகத்தர் 02)</option>
-                <option value="பிரதேச செயலாளர் (Super Admin)">🏛️ பிரதேச செயலாளர் / தலைமை நிர்வாகி (Super Admin)</option>
-                <option value="காணி பிரிவு உத்தியோகத்தர்">🗺️ காணி பிரிவு உத்தியோகத்தர் (Land Officer)</option>
-                <option value="கணக்காளர் / நிதிப் பிரிவு">💰 கணக்காளர் / நிதிப் பிரிவு (Accountant / Finance)</option>
-                <option value="அஸ்வெசும / சமூர்த்தி உத்தியோகத்தர்">🤝 அஸ்வெசும / சமூர்த்தி நலன்புரி உத்தியோகத்தர்</option>
-                <option value="பிறப்பு/இறப்பு பதிவாளர் (Civil Registrar)">📜 பிறப்பு / இறப்பு / விவாக பதிவாளர் (Civil Registrar)</option>
-                <option value="கிராம அலுவலர் (Grama Niladhari)">🌾 கிராம அலுவலர் (Grama Niladhari)</option>
-                <option value="ECDO (கர்ப்பிணித் தாய்மார்கள் பதிவாளர்)">🤰 ECDO (கர்ப்பிணித் தாய்மார்கள் பதிவாளர்)</option>
-                <option value="அங்கவீனர் பதிவாளர்">♿ அங்கவீனர் / மாற்றுத்திறனாளிகள் பதிவாளர்</option>
-                <option value="பொதுமக்கள் வழிகாட்டல் உத்தியோகத்தர்">ℹ️ பொதுமக்கள் சேவை வழிகாட்டல் பிரிவு</option>
-              </select>
+              {/* Current Selected Officer Display */}
+              <div className="flex items-center justify-between p-2 bg-white border border-amber-300 rounded-lg">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-base shrink-0">👔</span>
+                  <div className="min-w-0">
+                    <span className="text-[10px] text-slate-500 font-medium block">
+                      {lang === 'ta' ? 'தேர்ந்தெடுக்கப்பட்ட அலுவலர்:' : 'Selected Officer:'}
+                    </span>
+                    <span className="text-xs font-bold text-slate-900 truncate block">
+                      {officerToMeet}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowOfficerDropdown(!showOfficerDropdown)}
+                  className="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded text-[11px] font-bold transition-colors shrink-0"
+                >
+                  {showOfficerDropdown ? (lang === 'ta' ? 'மூடுக' : 'Close') : (lang === 'ta' ? 'மாற்றுக / தேடுக' : 'Search / Change')}
+                </button>
+              </div>
+
+              {/* Searchable Dropdown Panel */}
+              {showOfficerDropdown && (
+                <div className="bg-white border-2 border-amber-400 rounded-xl p-2.5 shadow-xl space-y-2 z-20 animate-in fade-in">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder={t.searchOfficerPlaceholder}
+                      value={officerSearchQuery}
+                      onChange={(e) => setOfficerSearchQuery(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                    {officerSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setOfficerSearchQuery('')}
+                        className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Filtered Officers List */}
+                  <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-lg">
+                    {filteredOfficers.length === 0 ? (
+                      <div className="p-3 text-center text-slate-500 text-[11px]">
+                        <p>{t.officerSearchEmpty}</p>
+                        {officerSearchQuery.trim() && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOfficerToMeet(officerSearchQuery.trim());
+                              setShowOfficerDropdown(false);
+                            }}
+                            className="mt-1.5 px-3 py-1 bg-amber-600 text-white rounded text-[10px] font-bold"
+                          >
+                            ✓ "{officerSearchQuery.trim()}" {lang === 'ta' ? 'என்ற பெயரையே பயன்படுத்து' : 'Use this exact name'}
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      filteredOfficers.map((off, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => {
+                            setOfficerToMeet(lang === 'ta' ? off.nameTa : off.nameEn);
+                            setShowOfficerDropdown(false);
+                          }}
+                          className={`p-2 hover:bg-amber-50 cursor-pointer flex items-center justify-between gap-2 text-xs transition-colors ${
+                            officerToMeet === off.nameTa || officerToMeet === off.nameEn ? 'bg-amber-100/70 font-bold' : ''
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-base shrink-0">{off.icon}</span>
+                            <div className="min-w-0">
+                              <div className="text-slate-900 font-semibold truncate">
+                                {lang === 'ta' ? off.nameTa : off.nameEn}
+                              </div>
+                              <div className="text-[10px] text-slate-500 truncate">
+                                {lang === 'ta' ? off.deptTa : off.deptEn}
+                              </div>
+                            </div>
+                          </div>
+                          <span className="text-[10px] text-amber-800 font-mono shrink-0">
+                            {lang === 'ta' ? 'தேர்வு செய்' : 'Select'}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Direct custom officer input */}
+                  <div className="pt-1 border-t border-slate-100">
+                    <label className="text-[10px] text-slate-500 block mb-0.5 font-medium">
+                      {t.specifyCustomOfficer}
+                    </label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="e.g. திரு. கந்தசாமி (திட்டமிடல் பிரிவு)"
+                        value={officerSearchQuery}
+                        onChange={(e) => setOfficerSearchQuery(e.target.value)}
+                        className="flex-1 px-2.5 py-1 text-xs border border-slate-300 rounded"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (officerSearchQuery.trim()) {
+                            setOfficerToMeet(officerSearchQuery.trim());
+                            setShowOfficerDropdown(false);
+                          }
+                        }}
+                        className="px-2.5 py-1 bg-amber-600 text-white rounded text-xs font-bold shrink-0 hover:bg-amber-700"
+                      >
+                        {t.save}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Quick Select Chips */}
               <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                <span className="text-[10px] text-amber-800 font-semibold">{lang === 'ta' ? 'விரைவு தேர்வு:' : 'Quick:'}</span>
+                <span className="text-[10px] text-amber-800 font-semibold">{t.quickSelect}:</span>
                 <button
                   type="button"
-                  onClick={() => setOfficerToMeet('அட்மின் 1 (Admin 1)')}
+                  onClick={() => setOfficerToMeet('அட்மின் 01 (Admin 1)')}
                   className={`text-[10px] px-2 py-0.5 rounded font-bold transition-colors ${
-                    officerToMeet.includes('அட்மின் 1') || officerToMeet.includes('Admin 1')
+                    officerToMeet.includes('அட்மின் 01') || officerToMeet.includes('Admin 1')
                       ? 'bg-amber-600 text-white'
                       : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
                   }`}
                 >
-                  அட்மின் 1
+                  அட்மின் 01
                 </button>
                 <button
                   type="button"
-                  onClick={() => setOfficerToMeet('அட்மின் 2 (Admin 2)')}
+                  onClick={() => setOfficerToMeet('அட்மின் 02 (Admin 2)')}
                   className={`text-[10px] px-2 py-0.5 rounded font-bold transition-colors ${
-                    officerToMeet.includes('அட்மின் 2') || officerToMeet.includes('Admin 2')
+                    officerToMeet.includes('அட்மின் 02') || officerToMeet.includes('Admin 2')
                       ? 'bg-amber-600 text-white'
                       : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
                   }`}
                 >
-                  அட்மின் 2
+                  அட்மின் 02
                 </button>
                 <button
                   type="button"
@@ -574,6 +806,28 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
                   }`}
                 >
                   செயலாளர்
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOfficerToMeet('காணி பிரிவு உத்தியோகத்தர்')}
+                  className={`text-[10px] px-2 py-0.5 rounded font-bold transition-colors ${
+                    officerToMeet.includes('காணி')
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
+                  }`}
+                >
+                  காணி
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOfficerToMeet('அஸ்வெசும / சமூர்த்தி உத்தியோகத்தர்')}
+                  className={`text-[10px] px-2 py-0.5 rounded font-bold transition-colors ${
+                    officerToMeet.includes('சமூர்த்தி') || officerToMeet.includes('அஸ்வெசும')
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
+                  }`}
+                >
+                  சமூர்த்தி
                 </button>
               </div>
             </div>
@@ -861,24 +1115,83 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
             </div>
           </div>
 
-          {/* Waiting Queue List with Live Elapsed Counter, Note button & Forward button */}
+          {/* Waiting Queue List with Live Elapsed Counter, Whom to Meet Search, Note button & Forward button */}
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-            <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
-              <span className="font-bold text-slate-800">
-                {t.waitingQueue} ({waitingTokens.length})
-              </span>
-              <span className="text-slate-500 text-[11px]">
-                {lang === 'ta' ? 'வரிசைப்படி அழைக்கவும்' : 'Call in order of arrival'}
-              </span>
+            <div className="p-4 border-b border-slate-200 bg-slate-50 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-800 text-xs">
+                    {t.waitingQueue} ({filteredWaitingTokens.length} / {waitingTokens.length})
+                  </span>
+                  {queueOfficerFilter !== 'ALL' && (
+                    <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full font-bold">
+                      {queueOfficerFilter}
+                    </span>
+                  )}
+                </div>
+
+                {isSuperAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllTokens}
+                    disabled={tokens.length === 0}
+                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-800 rounded text-[11px] font-bold flex items-center gap-1 transition-colors self-start sm:self-auto disabled:opacity-50"
+                  >
+                    <span>🗑️</span>
+                    <span>{lang === 'ta' ? 'அனைத்து டோக்கன்களையும் அழி (Super Admin)' : 'Clear All Tokens (Super Admin)'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Requirement 3: யாரை பார்க்க வேண்டும் என்பதிலும் தேடல் வசதி (Search & Filter in Waiting Queue) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-slate-200/60">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={queueSearchQuery}
+                    onChange={(e) => setQueueSearchQuery(e.target.value)}
+                    placeholder={t.searchByOfficerOrCitizen}
+                    className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+                  />
+                  <span className="absolute left-2.5 top-2 text-slate-400 text-xs">🔍</span>
+                  {queueSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setQueueSearchQuery('')}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="text-[11px] text-slate-600 font-bold shrink-0 hidden sm:inline">
+                    {lang === 'ta' ? 'அலுவலர்:' : 'Officer:'}
+                  </label>
+                  <select
+                    value={queueOfficerFilter}
+                    onChange={(e) => setQueueOfficerFilter(e.target.value)}
+                    className="w-full py-1.5 px-2.5 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-600 focus:outline-none font-medium"
+                  >
+                    <option value="ALL">{t.allOfficers}</option>
+                    {officerDirectory.map((off, idx) => (
+                      <option key={idx} value={lang === 'ta' ? off.nameTa : off.nameEn}>
+                        {lang === 'ta' ? off.nameTa : off.nameEn}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
             <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
-              {waitingTokens.length === 0 ? (
+              {filteredWaitingTokens.length === 0 ? (
                 <div className="p-6 text-center text-slate-400 text-xs">
-                  {lang === 'ta' ? 'காத்திருப்பு வரிசையில் எவரும் இல்லை' : 'Queue is empty.'}
+                  {lang === 'ta' ? 'காத்திருப்பு வரிசையில் எதுவும் காணப்படவில்லை' : 'No tokens matched the queue filter.'}
                 </div>
               ) : (
-                waitingTokens.map((tok, idx) => {
+                filteredWaitingTokens.map((tok, idx) => {
                   const elapsedWait = getElapsedWaitMinutes(tok.issuedAt);
                   const isLongWait = elapsedWait > 20;
 
@@ -978,6 +1291,30 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
                         >
                           🖨️
                         </button>
+
+                        {/* Super Admin / Admin Edit Button */}
+                        {isSuperAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedTokenForEdit(tok)}
+                            className="p-1.5 text-blue-700 hover:bg-blue-50 border border-blue-200 rounded text-xs font-bold"
+                            title={lang === 'ta' ? 'டோக்கன் விபரம் திருத்து (Super Admin)' : 'Edit Token (Super Admin)'}
+                          >
+                            ✏️
+                          </button>
+                        )}
+
+                        {/* Super Admin / Admin Delete Button */}
+                        {(isSuperAdmin || currentUser?.role === 'ADMIN 1' || currentUser?.role === 'ADMIN 2') && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteToken(tok.id)}
+                            className="p-1.5 text-rose-700 hover:bg-rose-50 border border-rose-200 rounded text-xs font-bold"
+                            title={lang === 'ta' ? 'டோக்கன் நீக்குக' : 'Delete Token'}
+                          >
+                            🗑️
+                          </button>
+                        )}
 
                         <button
                           onClick={() => handleUpdateStatus(tok.id, 'CALLING')}
@@ -1291,6 +1628,151 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
           lang={lang}
           onClose={() => setSelectedBeneficiaryForCard(null)}
         />
+      )}
+
+      {/* Super Admin Token Edit Modal */}
+      {selectedTokenForEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">✏️</span>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {lang === 'ta' ? 'டோக்கன் விபரம் திருத்து (Super Admin)' : 'Edit Token (Super Admin)'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedTokenForEdit(null)}
+                className="text-slate-400 hover:text-slate-700 text-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3.5">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{t.tokenNumber}</label>
+                  <input
+                    type="text"
+                    value={selectedTokenForEdit.tokenNumber}
+                    onChange={(e) => setSelectedTokenForEdit({ ...selectedTokenForEdit, tokenNumber: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs font-mono font-bold border border-slate-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{t.counter}</label>
+                  <input
+                    type="number"
+                    value={selectedTokenForEdit.counterNo}
+                    onChange={(e) => setSelectedTokenForEdit({ ...selectedTokenForEdit, counterNo: Number(e.target.value) || 1 })}
+                    className="w-full px-3 py-1.5 text-xs font-mono border border-slate-300 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{t.officerToMeet}</label>
+                <input
+                  type="text"
+                  value={selectedTokenForEdit.officerToMeet || ''}
+                  onChange={(e) => setSelectedTokenForEdit({ ...selectedTokenForEdit, officerToMeet: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{t.citizenName}</label>
+                  <input
+                    type="text"
+                    value={selectedTokenForEdit.citizenName || ''}
+                    onChange={(e) => setSelectedTokenForEdit({ ...selectedTokenForEdit, citizenName: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{t.nicNumber}</label>
+                  <input
+                    type="text"
+                    value={selectedTokenForEdit.citizenNic || ''}
+                    onChange={(e) => setSelectedTokenForEdit({ ...selectedTokenForEdit, citizenNic: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs font-mono border border-slate-300 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{t.status}</label>
+                  <select
+                    value={selectedTokenForEdit.status}
+                    onChange={(e) => setSelectedTokenForEdit({ ...selectedTokenForEdit, status: e.target.value as TokenStatus })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg font-bold bg-white"
+                  >
+                    <option value="WAITING">WAITING (காத்திருப்பு)</option>
+                    <option value="CALLING">CALLING (அழைப்பு)</option>
+                    <option value="SERVING">SERVING (சேவை வழங்கல்)</option>
+                    <option value="COMPLETED">COMPLETED (நிறைவு)</option>
+                    <option value="SKIPPED">SKIPPED (தவறவிடப்பட்டது)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{t.division}</label>
+                  <select
+                    value={selectedTokenForEdit.divisionCode || '211'}
+                    onChange={(e) => setSelectedTokenForEdit({ ...selectedTokenForEdit, divisionCode: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
+                  >
+                    {divisions.map((d) => (
+                      <option key={d.code} value={d.code}>{d.code} - {lang === 'ta' ? d.nameTa : d.nameEn}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{lang === 'ta' ? 'குறிப்பு' : 'Notes'}</label>
+                <textarea
+                  rows={3}
+                  value={selectedTokenForEdit.notes || ''}
+                  onChange={(e) => setSelectedTokenForEdit({ ...selectedTokenForEdit, notes: e.target.value })}
+                  className="w-full p-2.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDeleteToken(selectedTokenForEdit.id);
+                    setSelectedTokenForEdit(null);
+                  }}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-lg text-xs font-bold transition-colors"
+                >
+                  🗑️ {lang === 'ta' ? 'டோக்கனை அழி' : 'Delete'}
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTokenForEdit(null)}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium"
+                  >
+                    {t.cancel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveEditedToken(selectedTokenForEdit)}
+                    className="px-4 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-bold transition-colors shadow-xs"
+                  >
+                    {t.save}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Thermal Receipt Modal Preview & Auto-Print with Feedback Tear-Off Slip */}

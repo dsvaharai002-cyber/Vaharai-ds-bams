@@ -9,7 +9,7 @@ import {
   parseFamiliesFromCsv,
   exportAssistanceToCsv,
 } from '../services/csv';
-import { checkDuplicateAssistance, generateUniqueFamilyQrPayload } from '../services/storage';
+import { checkDuplicateAssistance, generateUniqueFamilyQrPayload, clearAllAssistanceRecords } from '../services/storage';
 import {
   Gift,
   AlertTriangle,
@@ -27,6 +27,8 @@ import {
   FileText,
   Clock,
   ExternalLink,
+  Trash2,
+  Edit2,
 } from 'lucide-react';
 
 interface AssistanceDistributionViewProps {
@@ -51,6 +53,7 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
   onAuditLog,
 }) => {
   const t = translations[lang];
+  const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
 
   // Active sub-tab: 'distribute' (நேரடி உதவி வழங்கல்), 'csv-upload' (சிஎஸ்வி மாதிரி & பதிவேற்றம்), 'history' (முழு வரலாறு & தணிக்கை)
   const [activeTab, setActiveTab] = useState<'distribute' | 'csv-upload' | 'history'>('distribute');
@@ -90,6 +93,42 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
   const [filterDivision, setFilterDivision] = useState('ALL');
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false);
+
+  // Super Admin Edit & Delete State
+  const [selectedRecordForEdit, setSelectedRecordForEdit] = useState<AssistanceRecord | null>(null);
+
+  const handleDeleteRecord = (recordId: string) => {
+    if (!isSuperAdmin && currentUser?.role !== 'ADMIN 1' && currentUser?.role !== 'ADMIN 2') return;
+    const confirmMsg = lang === 'ta'
+      ? 'இந்த உதவிப் பதிவை நிச்சயமாக நீக்க வேண்டுமா?'
+      : 'Are you sure you want to delete this relief record?';
+    if (!window.confirm(confirmMsg)) return;
+
+    const rec = assistanceRecords.find((r) => r.id === recordId);
+    const updated = assistanceRecords.filter((r) => r.id !== recordId);
+    onUpdateAssistanceRecords(updated);
+    onAuditLog('DELETE_ASSISTANCE_RECORD', `Deleted assistance record ${rec?.id} for family ${rec?.familyCode}`);
+  };
+
+  const handleClearAllRecords = () => {
+    if (!isSuperAdmin) return;
+    const confirmMsg = lang === 'ta'
+      ? 'கவனம்: அனைத்து உதவி மற்றும் நிவாரண பதிவுகளும் நிரந்தரமாக அழிக்கப்படும். தொடரவா?'
+      : 'Caution: All assistance records will be permanently erased. Proceed?';
+    if (!window.confirm(confirmMsg)) return;
+
+    onUpdateAssistanceRecords([]);
+    clearAllAssistanceRecords();
+    onAuditLog('CLEAR_ALL_ASSISTANCE', `Super Admin (${currentUser.name}) cleared all assistance records`);
+    alert(lang === 'ta' ? 'அனைத்து உதவி பதிவுகளும் அழிக்கப்பட்டன.' : 'All assistance records have been cleared.');
+  };
+
+  const handleSaveEditedRecord = (edited: AssistanceRecord) => {
+    const updated = assistanceRecords.map((r) => (r.id === edited.id ? edited : r));
+    onUpdateAssistanceRecords(updated);
+    onAuditLog('EDIT_ASSISTANCE_RECORD', `Super Admin edited assistance record ${edited.id} for family ${edited.familyCode}`);
+    setSelectedRecordForEdit(null);
+  };
 
   // Quick categories list
   const categoryOptions: { key: AidCategory; labelTa: string; labelEn: string; icon: string }[] = [
@@ -1181,58 +1220,78 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
       {/* ================= TAB 3: COMPLETE ASSISTANCE HISTORY & DUPLICATE AUDIT ================= */}
       {activeTab === 'history' && (
         <div className="space-y-4">
-          {/* Filters Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 flex-1">
-              <Search className="w-4 h-4 text-slate-400 shrink-0" />
-              <input
-                type="text"
-                value={historySearch}
-                onChange={(e) => setHistorySearch(e.target.value)}
-                placeholder={lang === 'ta' ? 'குடும்பக் குறியீடு, NIC, பெயர், உதவி விபரம் தேடுக...' : 'Search by Family, NIC, Name, Aid description...'}
-                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-600 text-xs"
-              />
+          {/* Filters Bar & Super Admin Master Controls */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <span className="font-bold text-slate-800 text-xs">
+                {lang === 'ta' ? `முழு உதவிப் பதிவுகள் வரலாறு (${filteredHistory.length})` : `Assistance Records History (${filteredHistory.length})`}
+              </span>
+
+              {isSuperAdmin && (
+                <button
+                  type="button"
+                  onClick={handleClearAllRecords}
+                  disabled={assistanceRecords.length === 0}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-800 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 self-start sm:self-auto"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{lang === 'ta' ? 'அனைத்து உதவி பதிவுகளையும் அழி (Super Admin)' : 'Clear All Relief Records (Super Admin)'}</span>
+                </button>
+              )}
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <select
-                value={filterDivision}
-                onChange={(e) => setFilterDivision(e.target.value)}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
-              >
-                <option value="ALL">{lang === 'ta' ? 'அனைத்துப் பிரிவுகள் (All Divisions)' : 'All Divisions'}</option>
-                {divisions.map((d) => (
-                  <option key={d.code} value={d.code}>
-                    {d.code} - {lang === 'ta' ? d.nameTa : d.nameEn}
-                  </option>
-                ))}
-              </select>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs pt-1 border-t border-slate-100">
+              <div className="flex items-center gap-2 flex-1">
+                <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  placeholder={lang === 'ta' ? 'குடும்பக் குறியீடு, NIC, பெயர், உதவி விபரம் தேடுக...' : 'Search by Family, NIC, Name, Aid description...'}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-600 text-xs"
+                />
+              </div>
 
-              <select
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
-              >
-                <option value="ALL">{lang === 'ta' ? 'அனைத்து உதவிகள் (All Aid)' : 'All Aid Categories'}</option>
-                {categoryOptions.map((c) => (
-                  <option key={c.key} value={c.key}>
-                    {c.icon} {lang === 'ta' ? c.labelTa : c.labelEn}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={filterDivision}
+                  onChange={(e) => setFilterDivision(e.target.value)}
+                  className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
+                >
+                  <option value="ALL">{lang === 'ta' ? 'அனைத்துப் பிரிவுகள் (All Divisions)' : 'All Divisions'}</option>
+                  {divisions.map((d) => (
+                    <option key={d.code} value={d.code}>
+                      {d.code} - {lang === 'ta' ? d.nameTa : d.nameEn}
+                    </option>
+                  ))}
+                </select>
 
-              <button
-                type="button"
-                onClick={() => setShowDuplicatesOnly(!showDuplicatesOnly)}
-                className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  showDuplicatesOnly
-                    ? 'bg-red-600 text-white border-red-600 shadow-xs'
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                <ShieldAlert className="w-3.5 h-3.5" />
-                <span>{lang === 'ta' ? 'இரட்டை உதவிகள் மட்டும்' : 'Duplicates Only'}</span>
-              </button>
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
+                >
+                  <option value="ALL">{lang === 'ta' ? 'அனைத்து உதவிகள் (All Aid)' : 'All Aid Categories'}</option>
+                  {categoryOptions.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.icon} {lang === 'ta' ? c.labelTa : c.labelEn}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => setShowDuplicatesOnly(!showDuplicatesOnly)}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    showDuplicatesOnly
+                      ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span>{lang === 'ta' ? 'இரட்டை உதவிகள் மட்டும்' : 'Duplicates Only'}</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1251,12 +1310,13 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
                   <th className="p-3">திகதி</th>
                   <th className="p-3">அலுவலர்</th>
                   <th className="p-3">நிலை</th>
+                  <th className="p-3 text-right">நடவடிக்கை</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredHistory.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="p-8 text-center text-slate-400">
+                    <td colSpan={11} className="p-8 text-center text-slate-400">
                       {lang === 'ta' ? 'உதவிப் பதிவுகள் எதுவும் கிடைக்கவில்லை.' : 'No assistance records found.'}
                     </td>
                   </tr>
@@ -1301,11 +1361,201 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
                           </span>
                         )}
                       </td>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {isSuperAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedRecordForEdit(rec)}
+                              className="p-1.5 text-blue-700 hover:bg-blue-50 border border-blue-200 rounded text-xs font-bold transition-colors"
+                              title={lang === 'ta' ? 'உதவிப் பதிவை திருத்து (Super Admin)' : 'Edit Record (Super Admin)'}
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {(isSuperAdmin || currentUser?.role === 'ADMIN 1' || currentUser?.role === 'ADMIN 2') && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRecord(rec.id)}
+                              className="p-1.5 text-rose-700 hover:bg-rose-50 border border-rose-200 rounded text-xs font-bold transition-colors"
+                              title={lang === 'ta' ? 'உதவிப் பதிவை நீக்கு' : 'Delete Record'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Super Admin Edit Assistance Record Modal */}
+      {selectedRecordForEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">✏️</span>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {lang === 'ta' ? 'உதவிப் பதிவை திருத்து (Super Admin Master Authority)' : 'Edit Relief Record (Super Admin Master Authority)'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedRecordForEdit(null)}
+                className="text-slate-400 hover:text-slate-700 text-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">பதிவு இலக்கம் (Record ID)</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={selectedRecordForEdit.id}
+                    className="w-full px-3 py-1.5 bg-slate-100 font-mono text-slate-600 rounded-lg border border-slate-300"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">குடும்பக் குறியீடு (Family Code)</label>
+                  <input
+                    type="text"
+                    value={selectedRecordForEdit.familyCode}
+                    onChange={(e) => setSelectedRecordForEdit({ ...selectedRecordForEdit, familyCode: e.target.value })}
+                    className="w-full px-3 py-1.5 font-mono font-bold text-amber-900 rounded-lg border border-slate-300"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">பயனாளி பெயர்</label>
+                  <input
+                    type="text"
+                    value={selectedRecordForEdit.beneficiaryName}
+                    onChange={(e) => setSelectedRecordForEdit({ ...selectedRecordForEdit, beneficiaryName: e.target.value })}
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-300 font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">அடையாள அட்டை (NIC)</label>
+                  <input
+                    type="text"
+                    value={selectedRecordForEdit.beneficiaryNic}
+                    onChange={(e) => setSelectedRecordForEdit({ ...selectedRecordForEdit, beneficiaryNic: e.target.value })}
+                    className="w-full px-3 py-1.5 font-mono rounded-lg border border-slate-300"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">உதவி வகை (Aid Category)</label>
+                  <select
+                    value={selectedRecordForEdit.aidCategory}
+                    onChange={(e) => setSelectedRecordForEdit({ ...selectedRecordForEdit, aidCategory: e.target.value as AidCategory })}
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-medium"
+                  >
+                    {categoryOptions.map((c) => (
+                      <option key={c.key} value={c.key}>{c.icon} {c.labelTa}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">பிரிவு (Division)</label>
+                  <select
+                    value={selectedRecordForEdit.divisionCode}
+                    onChange={(e) => setSelectedRecordForEdit({ ...selectedRecordForEdit, divisionCode: e.target.value })}
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white"
+                  >
+                    {divisions.map((d) => (
+                      <option key={d.code} value={d.code}>{d.code} - {d.nameTa}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">உதவி விபரம் (Aid Description)</label>
+                <input
+                  type="text"
+                  value={selectedRecordForEdit.aidDescription}
+                  onChange={(e) => setSelectedRecordForEdit({ ...selectedRecordForEdit, aidDescription: e.target.value })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300 font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">பெறுமதி / அளவு (Amount/Value)</label>
+                  <input
+                    type="text"
+                    value={selectedRecordForEdit.amountOrValue}
+                    onChange={(e) => setSelectedRecordForEdit({ ...selectedRecordForEdit, amountOrValue: e.target.value })}
+                    className="w-full px-3 py-1.5 font-bold rounded-lg border border-slate-300"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">வழங்கிய திகதி (Date)</label>
+                  <input
+                    type="date"
+                    value={selectedRecordForEdit.distributedDate}
+                    onChange={(e) => setSelectedRecordForEdit({ ...selectedRecordForEdit, distributedDate: e.target.value })}
+                    className="w-full px-3 py-1.5 font-mono rounded-lg border border-slate-300"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">வழங்கும் நிறுவனம் (Donor / Agency)</label>
+                <input
+                  type="text"
+                  value={selectedRecordForEdit.donorOrOrganization}
+                  onChange={(e) => setSelectedRecordForEdit({ ...selectedRecordForEdit, donorOrOrganization: e.target.value })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDeleteRecord(selectedRecordForEdit.id);
+                    setSelectedRecordForEdit(null);
+                  }}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-lg text-xs font-bold transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5 inline mr-1" />
+                  <span>{lang === 'ta' ? 'பதிவை நீக்கு' : 'Delete'}</span>
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRecordForEdit(null)}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium"
+                  >
+                    {t.cancel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveEditedRecord(selectedRecordForEdit)}
+                    className="px-4 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-bold transition-colors shadow-xs"
+                  >
+                    {t.save}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

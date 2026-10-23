@@ -151,14 +151,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const adminItems = [
+    ...(isSuperAdmin
+      ? [
+          {
+            id: 'services',
+            title: lang === 'ta' ? 'சேவைகள் கட்டமைப்பு' : 'Service Management',
+            subtitle: lang === 'ta' ? 'புதிய சேவை சேர்த்தல் & மாற்றல்' : 'Custom Services & Counters',
+            icon: Settings2,
+            badge: lang === 'ta' ? 'சுப்பர் அட்மின்' : 'Super Admin',
+          },
+        ]
+      : []),
     ...(canAccessStaff
       ? [
           {
             id: 'staff',
             title: t.navStaff,
-            subtitle: lang === 'ta' ? 'அலுவலர் கணக்குகள்' : 'Staff RBAC',
+            subtitle: lang === 'ta' ? 'அலுவலர் கணக்குகள்' : 'Staff Accounts & Roles',
             icon: ShieldCheck,
-            badge: 'Admin',
+            badge: lang === 'ta' ? 'நிர்வாகம்' : 'Admin',
           },
         ]
       : []),
@@ -166,10 +177,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ? [
           {
             id: 'drive',
-            title: lang === 'ta' ? 'கூகிள் டிரைவ் & சீட்' : 'Google Drive & Sheets',
-            subtitle: lang === 'ta' ? 'தானியங்கி கிளவுட் சிங்' : 'Cloud Auto-Sync',
+            title: lang === 'ta' ? 'கூகிள் டிரைவ் காப்புப்பதிவு' : 'Google Drive Backup',
+            subtitle: lang === 'ta' ? 'தானியங்கி கிளவுட் ஒத்திசைவு' : 'Cloud Auto Sync',
             icon: HardDrive,
-            badge: isDriveConnected ? 'Drive' : 'Cloud',
+            badge: isDriveConnected ? (lang === 'ta' ? 'இணைப்பு' : 'Connected') : (lang === 'ta' ? 'கிளவுட்' : 'Cloud'),
           },
         ]
       : []),

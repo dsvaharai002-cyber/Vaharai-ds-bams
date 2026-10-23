@@ -8,7 +8,8 @@ import {
   WelfareScheme, 
   WelfareStatus,
   AssistanceRecord,
-  DuplicateAidCheckResult
+  DuplicateAidCheckResult,
+  ServiceDefinition,
 } from '../types';
 import initialDatabaseSeed from '../data/central_database.json';
 import { scheduleAutoDriveSync } from './googleDrive';
@@ -20,6 +21,8 @@ const STORAGE_KEYS = {
   DIVISIONS: 'vaharai_ds_divisions_v6',
   AUDIT_LOGS: 'vaharai_ds_audit_logs_v4',
   ASSISTANCE: 'vaharai_ds_assistance_v4',
+  SERVICES: 'vaharai_ds_services_v4',
+  INITIALIZED: 'vaharai_ds_initialized_v4',
 };
 
 // Age calculation helper
@@ -584,11 +587,105 @@ export const DEFAULT_TOKENS: QueueToken[] = ((initialDatabaseSeed as any)?.token
   },
 ];
 
+// Initial Default Services for Vaharai Divisional Secretariat
+export const DEFAULT_SERVICES: ServiceDefinition[] = [
+  {
+    id: 'SRV-WELFARE',
+    code: 'WELFARE_SCHEME',
+    nameTa: 'அஸ்வெசும & சமுர்த்தி நலன்புரி',
+    nameEn: 'Aswesuma & Samurdhi Welfare',
+    counterNo: 4,
+    prefix: 'W',
+    defaultOfficerTa: 'அட்மின் 02 (Admin 2)',
+    defaultOfficerEn: 'Admin 2 (Administrative Officer 02)',
+    descriptionTa: 'அஸ்வெசும, சமுர்த்தி மற்றும் நலன்புரிக் கொடுப்பனவுகள் தொடர்பான சேவைகள்',
+    descriptionEn: 'Aswesuma, Samurdhi and social welfare benefits',
+    isActive: true,
+    isCustom: false,
+    createdAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'SRV-LAND',
+    code: 'LAND_PERMIT',
+    nameTa: 'காணி அனுமதிப்பத்திரம் & எல்லைகள்',
+    nameEn: 'Land Permits & Boundary Inquiries',
+    counterNo: 2,
+    prefix: 'L',
+    defaultOfficerTa: 'காணி பிரிவு உத்தியோகத்தர் (Land Officer)',
+    defaultOfficerEn: 'Land Branch Officer',
+    descriptionTa: 'அரச காணி அனுமதிப்பத்திரம், எல்லை அளவீடு மற்றும் காணி பிணக்குகள்',
+    descriptionEn: 'State land permits, boundary surveying and land dispute resolutions',
+    isActive: true,
+    isCustom: false,
+    createdAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'SRV-CIVIL',
+    code: 'CIVIL_REGISTRATION',
+    nameTa: 'பிறப்பு / இறப்பு / விவாக சான்றிதழ்',
+    nameEn: 'Birth / Death / Marriage Registration',
+    counterNo: 1,
+    prefix: 'C',
+    defaultOfficerTa: 'பிறப்பு/இறப்பு பதிவாளர் (Civil Registrar)',
+    defaultOfficerEn: 'Civil Registrar Officer',
+    descriptionTa: 'பிறப்பு, இறப்பு, விவாக சான்றிதழ் பிரதிகள் மற்றும் பதிவுகள்',
+    descriptionEn: 'Birth, death, marriage certificates and official registrations',
+    isActive: true,
+    isCustom: false,
+    createdAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'SRV-GRAMA',
+    code: 'GRAMA_CERTIFICATE',
+    nameTa: 'கிராம அலுவலர் சான்றிதழ் & அறிக்கை',
+    nameEn: 'Grama Niladhari Certificates & Reports',
+    counterNo: 3,
+    prefix: 'G',
+    defaultOfficerTa: 'கிராம அலுவலர் (Grama Niladhari)',
+    defaultOfficerEn: 'Grama Niladhari Officer',
+    descriptionTa: 'வசிக்கை சான்றிதழ், நன்னடத்தை சான்றிதழ் மற்றும் கிராம மட்ட பரிந்துரைகள்',
+    descriptionEn: 'Residence certificate, character certificate and GN recommendations',
+    isActive: true,
+    isCustom: false,
+    createdAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'SRV-PUBLIC_AID',
+    code: 'PUBLIC_ASSISTANCE',
+    nameTa: 'பொதுமக்கள் உதவி & இடர் நிவாரணம்',
+    nameEn: 'Public Assistance & Relief Support',
+    counterNo: 5,
+    prefix: 'P',
+    defaultOfficerTa: 'அட்மின் 02 (Admin 2)',
+    defaultOfficerEn: 'Admin 2 (Administrative Officer 02)',
+    descriptionTa: 'அனர்த்த நிவாரண உதவி, உலர் உணவு மற்றும் விசேட தேவைகள்',
+    descriptionEn: 'Disaster relief, dry rations, and special emergency aid',
+    isActive: true,
+    isCustom: false,
+    createdAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'SRV-GENERAL',
+    code: 'GENERAL_INQUIRY',
+    nameTa: 'பொது வழிகாட்டல் & விசாரணை',
+    nameEn: 'General Inquiries & Guidance',
+    counterNo: 6,
+    prefix: 'A',
+    defaultOfficerTa: 'அட்மின் 01 (Admin 1)',
+    defaultOfficerEn: 'Admin 1 (Administrative Officer 01)',
+    descriptionTa: 'பிரதேச செயலகத்தின் பொதுவான வழிகாட்டல் மற்றும் மக்கள் முறைப்பாடுகள்',
+    descriptionEn: 'General citizen guidance, counter information and complaints',
+    isActive: true,
+    isCustom: false,
+    createdAt: '2026-01-01T00:00:00Z',
+  },
+];
+
 // Helper to safely read from localStorage
 export const getStoredData = <T>(key: string, fallback: T): T => {
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) {
+    if (raw === null || raw === undefined) {
       localStorage.setItem(key, JSON.stringify(fallback));
       return fallback;
     }
@@ -607,20 +704,7 @@ export const setStoredData = <T>(key: string, data: T): void => {
 };
 
 export const loadUsers = (): User[] => {
-  const stored = getStoredData<User[]>(STORAGE_KEYS.USERS, DEFAULT_USERS);
-  const existingIds = new Set(stored.map((u) => u.id));
-  let modified = false;
-  const merged = [...stored];
-  for (const defUser of DEFAULT_USERS) {
-    if (!existingIds.has(defUser.id)) {
-      merged.push(defUser);
-      modified = true;
-    }
-  }
-  if (modified) {
-    setStoredData(STORAGE_KEYS.USERS, merged);
-  }
-  return merged;
+  return getStoredData<User[]>(STORAGE_KEYS.USERS, DEFAULT_USERS);
 };
 export const saveUsers = (users: User[]) => {
   setStoredData(STORAGE_KEYS.USERS, users);
@@ -629,17 +713,7 @@ export const saveUsers = (users: User[]) => {
 
 export const loadBeneficiaries = (): Beneficiary[] => {
   const stored = getStoredData<Beneficiary[]>(STORAGE_KEYS.BENEFICIARIES, DEFAULT_BENEFICIARIES);
-  const existingIds = new Set(stored.map((b) => b.id));
-  let modified = false;
-  const merged = [...stored];
-  for (const defB of DEFAULT_BENEFICIARIES) {
-    if (!existingIds.has(defB.id)) {
-      merged.push(defB);
-      modified = true;
-    }
-  }
-  // Ensure familyCode and familyQrPayload are populated
-  const enriched = merged.map((b) => {
+  return stored.map((b) => {
     const familyCode = b.familyCode || (b.householdNo ? `FAM-${b.householdNo.replace(/^HH-/, '')}` : `FAM-${b.divisionCode}-001`);
     const familyQrPayload = b.familyQrPayload || `VHR-FAMILY|FAM:${familyCode}|DIV:${b.divisionCode}`;
     return {
@@ -648,10 +722,6 @@ export const loadBeneficiaries = (): Beneficiary[] => {
       familyQrPayload,
     };
   });
-  if (modified) {
-    setStoredData(STORAGE_KEYS.BENEFICIARIES, enriched);
-  }
-  return enriched;
 };
 export const saveBeneficiaries = (items: Beneficiary[]) => {
   setStoredData(STORAGE_KEYS.BENEFICIARIES, items);
@@ -660,26 +730,47 @@ export const saveBeneficiaries = (items: Beneficiary[]) => {
 
 export const loadTokens = (): QueueToken[] => {
   const stored = getStoredData<QueueToken[]>(STORAGE_KEYS.TOKENS, DEFAULT_TOKENS);
-  const existingIds = new Set(stored.map((t) => t.id));
-  let modified = false;
-  const merged = [...stored];
-  for (const defT of DEFAULT_TOKENS) {
-    if (!existingIds.has(defT.id)) {
-      merged.push(defT);
-      modified = true;
-    }
-  }
-  const enriched = merged.map((tok) => ({
+  return stored.map((tok) => ({
     ...tok,
-    officerToMeet: tok.officerToMeet || 'அட்மின் 1 (Admin 1)',
+    officerToMeet: tok.officerToMeet || 'அட்மின் 01 (Admin 1)',
   }));
-  if (modified) {
-    setStoredData(STORAGE_KEYS.TOKENS, enriched);
-  }
-  return enriched;
 };
 export const saveTokens = (tokens: QueueToken[]) => {
   setStoredData(STORAGE_KEYS.TOKENS, tokens);
+  scheduleCentralSync();
+};
+
+export const loadServices = (): ServiceDefinition[] => {
+  return getStoredData<ServiceDefinition[]>(STORAGE_KEYS.SERVICES, DEFAULT_SERVICES);
+};
+export const saveServices = (services: ServiceDefinition[]) => {
+  setStoredData(STORAGE_KEYS.SERVICES, services);
+  scheduleCentralSync();
+};
+
+// Super Admin Clear All Tools
+export const clearAllBeneficiaries = (): void => {
+  setStoredData(STORAGE_KEYS.BENEFICIARIES, []);
+  scheduleCentralSync();
+};
+
+export const clearAllTokens = (): void => {
+  setStoredData(STORAGE_KEYS.TOKENS, []);
+  scheduleCentralSync();
+};
+
+export const clearAllAssistanceRecords = (): void => {
+  setStoredData(STORAGE_KEYS.ASSISTANCE, []);
+  scheduleCentralSync();
+};
+
+export const resetDatabaseToDefaults = (): void => {
+  setStoredData(STORAGE_KEYS.USERS, DEFAULT_USERS);
+  setStoredData(STORAGE_KEYS.BENEFICIARIES, DEFAULT_BENEFICIARIES);
+  setStoredData(STORAGE_KEYS.TOKENS, DEFAULT_TOKENS);
+  setStoredData(STORAGE_KEYS.DIVISIONS, DEFAULT_DIVISIONS);
+  setStoredData(STORAGE_KEYS.SERVICES, DEFAULT_SERVICES);
+  setStoredData(STORAGE_KEYS.ASSISTANCE, DEFAULT_ASSISTANCE_RECORDS);
   scheduleCentralSync();
 };
 
@@ -797,20 +888,7 @@ export const DEFAULT_ASSISTANCE_RECORDS: AssistanceRecord[] = ((initialDatabaseS
 ];
 
 export const loadAssistanceRecords = (): AssistanceRecord[] => {
-  const stored = getStoredData<AssistanceRecord[]>(STORAGE_KEYS.ASSISTANCE, DEFAULT_ASSISTANCE_RECORDS);
-  const existingIds = new Set(stored.map((a) => a.id));
-  let modified = false;
-  const merged = [...stored];
-  for (const defAid of DEFAULT_ASSISTANCE_RECORDS) {
-    if (!existingIds.has(defAid.id)) {
-      merged.push(defAid);
-      modified = true;
-    }
-  }
-  if (modified) {
-    setStoredData(STORAGE_KEYS.ASSISTANCE, merged);
-  }
-  return merged;
+  return getStoredData<AssistanceRecord[]>(STORAGE_KEYS.ASSISTANCE, DEFAULT_ASSISTANCE_RECORDS);
 };
 
 export const saveAssistanceRecords = (records: AssistanceRecord[]) => {

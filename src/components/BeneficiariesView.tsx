@@ -277,6 +277,55 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
     onAuditLog('DELETE_BENEFICIARY', `Deleted citizen ${b.nameEn} (ID: ${b.id})`);
   };
 
+  // Super Admin Bulk Delete & Clear All Tools
+  const isSuperAdmin = currentUser.role === 'SUPERADMIN';
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const handleToggleSelectAll = () => {
+    if (selectedIds.size === filteredBeneficiaries.length && filteredBeneficiaries.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredBeneficiaries.map((b) => b.id)));
+    }
+  };
+
+  const handleToggleSelectOne = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = () => {
+    if (!canDelete || selectedIds.size === 0) return;
+    const confirmMsg = lang === 'ta'
+      ? `தேர்ந்தெடுக்கப்பட்ட ${selectedIds.size} பிரஜைகளின் பதிவுகளை நிச்சயமாக நீக்க வேண்டுமா?`
+      : `Are you sure you want to delete the ${selectedIds.size} selected records?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const updated = beneficiaries.filter((b) => !selectedIds.has(b.id));
+    onUpdateBeneficiaries(updated);
+    onAuditLog('BULK_DELETE_BENEFICIARIES', `Deleted ${selectedIds.size} citizens in bulk by ${currentUser.name}`);
+    setSelectedIds(new Set());
+  };
+
+  const handleClearAllBeneficiaries = () => {
+    if (!isSuperAdmin) return;
+    const confirmMsg = lang === 'ta'
+      ? 'கவனம்: அனைத்து பிரஜைகளின் பதிவுகளும் நிரந்தரமாக அழிக்கப்படும்! நிச்சயமாக அழிக்க விரும்புகிறீர்களா?'
+      : 'Caution: ALL citizen records will be permanently deleted. Are you sure you want to proceed?';
+    if (!window.confirm(confirmMsg)) return;
+
+    const promptText = lang === 'ta' ? 'உறுதிப்படுத்த "DELETE" அல்லது "அழி" என தட்டச்சு செய்யவும்:' : 'Type "DELETE" to confirm:';
+    const answer = window.prompt(promptText);
+    if (answer === 'DELETE' || answer === 'அழி') {
+      onUpdateBeneficiaries([]);
+      onAuditLog('CLEAR_ALL_BENEFICIARIES', `Super Admin (${currentUser.name}) wiped all citizen records`);
+      setSelectedIds(new Set());
+      alert(lang === 'ta' ? 'அனைத்து பிரஜைகளின் பதிவுகளும் வெற்றிகரமாக அழிக்கப்பட்டன.' : 'All citizen records erased successfully.');
+    }
+  };
+
   return (
     <div className="space-y-6 w-full max-w-full overflow-x-hidden">
       {/* Top Banner */}
@@ -304,6 +353,27 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {selectedIds.size > 0 && canDelete && (
+            <button
+              onClick={handleBulkDelete}
+              className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs animate-in fade-in"
+            >
+              <span>🗑️</span>
+              <span>{t.bulkDeleteSelected} ({selectedIds.size})</span>
+            </button>
+          )}
+
+          {isSuperAdmin && (
+            <button
+              onClick={handleClearAllBeneficiaries}
+              className="px-3.5 py-2 bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-800 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
+              title={lang === 'ta' ? 'அனைத்து பிரஜைகளையும் அழிக்கும் சுப்பர் அட்மின் அதிகாரம்' : 'Clear all citizen records (Super Admin power)'}
+            >
+              <span>⚠️</span>
+              <span>{t.deleteAllBeneficiaries}</span>
+            </button>
+          )}
+
           <button
             onClick={() => setShowPdfReportModal(true)}
             className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
@@ -439,6 +509,17 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
           <table className="w-full min-w-[760px] text-left text-xs text-slate-700">
             <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200 uppercase text-[10px] tracking-wider">
               <tr>
+                {canDelete && (
+                  <th className="py-3 px-3 text-center w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size > 0 && selectedIds.size === filteredBeneficiaries.length}
+                      onChange={handleToggleSelectAll}
+                      className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                      title={lang === 'ta' ? 'அனைத்தையும் தேர்ந்தெடு' : 'Select all'}
+                    />
+                  </th>
+                )}
                 <th className="py-3 px-3">System ID</th>
                 <th className="py-3 px-3">{t.nic}</th>
                 <th className="py-3 px-3">{t.nameTamil} / English</th>
@@ -452,7 +533,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
             <tbody className="divide-y divide-slate-100">
               {filteredBeneficiaries.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-10 text-center text-slate-400">
+                  <td colSpan={canDelete ? 9 : 8} className="py-10 text-center text-slate-400">
                     {t.noData}
                   </td>
                 </tr>
@@ -460,7 +541,18 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                 filteredBeneficiaries.map((b) => {
                   const age = calculateAge(b.dob);
                   return (
-                    <tr key={b.id} className="hover:bg-slate-50/90 transition-colors">
+                    <tr key={b.id} className={`hover:bg-slate-50/90 transition-colors ${selectedIds.has(b.id) ? 'bg-emerald-50/50' : ''}`}>
+                      {/* Selection Checkbox */}
+                      {canDelete && (
+                        <td className="py-3 px-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(b.id)}
+                            onChange={() => handleToggleSelectOne(b.id)}
+                            className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                          />
+                        </td>
+                      )}
                       {/* System ID */}
                       <td className="py-3 px-3 font-mono font-bold text-slate-900 text-[11px] whitespace-nowrap">
                         {b.id}
@@ -614,12 +706,28 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
             </h3>
 
             <form onSubmit={handleSaveForm} className="mt-4 space-y-3.5">
-              {/* Automated System ID Notice */}
-              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-                <span className="text-slate-500 font-semibold">{t.systemId}:</span>{' '}
-                <strong className="font-mono text-emerald-900">{formData.id}</strong>
+              {/* System ID Section */}
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600 font-bold">{t.systemId}:</span>
+                  {isSuperAdmin && (
+                    <span className="text-[10px] bg-purple-100 text-purple-900 px-1.5 py-0.2 rounded font-bold font-mono">
+                      SUPER ADMIN EDIT
+                    </span>
+                  )}
+                </div>
+                {isSuperAdmin ? (
+                  <input
+                    type="text"
+                    value={formData.id || ''}
+                    onChange={(e) => setFormData({ ...formData, id: e.target.value.trim() })}
+                    className="w-full px-2.5 py-1.5 border border-purple-300 rounded font-mono font-bold text-slate-900 bg-white"
+                  />
+                ) : (
+                  <strong className="font-mono text-emerald-900 block">{formData.id}</strong>
+                )}
                 <span className="text-[10px] text-slate-400 block mt-0.5">
-                  {lang === 'ta' ? 'சிஸ்டம் தானாக ஒதுக்கிய நிரந்தர பிரஜை இலக்கம்' : 'Automated permanent citizen ID generated by system'}
+                  {lang === 'ta' ? 'நிரந்தர கணனி பிரஜை பதிவு இலக்கம்' : 'Permanent citizen system registration ID'}
                 </span>
               </div>
 

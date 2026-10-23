@@ -139,17 +139,7 @@ export const ThermalPrintReceipt: React.FC<ThermalPrintReceiptProps> = ({
             <span className="font-mono text-[9px] mt-0.5 tracking-wider">{token.tokenNumber}</span>
           </div>
 
-          {/* Waiting information */}
-          <div className="border-t border-black border-dashed pt-2 mt-2 text-[10px]">
-            <div className="font-medium">
-              உங்கள் முன் காத்திருப்போர்: <span className="font-bold text-sm font-mono">{waitingCount}</span>
-            </div>
-            <div className="text-[9px] text-slate-500">
-              (People waiting ahead of you: {waitingCount})
-            </div>
-          </div>
-
-          <div className="mt-2 text-[9px] text-slate-600 leading-tight">
+          <div className="border-t border-black border-dashed pt-2 mt-2 text-[9px] text-slate-600 leading-tight">
             திகதி / Date: {formattedDate} | நேரம் / Time: {formattedTime}
           </div>
 

@@ -1,11 +1,13 @@
 import { getGoogleAccessToken, isGoogleDriveAuthenticated } from './auth';
 import { DriveBackupItem } from '../types';
+import { parseBeneficiariesFromCsv } from './csv';
 
 export const DEFAULT_DESIGNATED_FILE_ID = '1oEDEnf1xa-7FQm89Wz9hgVBGWiF5Ylr2';
 export const DEFAULT_DESIGNATED_FILE_URL = 'https://drive.google.com/file/d/1oEDEnf1xa-7FQm89Wz9hgVBGWiF5Ylr2/view?usp=sharing';
 
 const STORAGE_KEYS = {
   DESIGNATED_FILE_ID: 'vaharai_ds_designated_drive_file_id',
+  GOOGLE_SHEET_URL: 'vaharai_ds_google_sheet_url',
   AUTO_SYNC_ENABLED: 'vaharai_ds_drive_auto_sync_enabled',
   LAST_DRIVE_SYNC: 'vaharai_ds_last_drive_sync_meta',
 };
@@ -14,6 +16,7 @@ export interface DriveSyncStatus {
   state: 'idle' | 'syncing' | 'synced' | 'error';
   lastSyncedAt?: string;
   fileId?: string;
+  sheetUrl?: string;
   message?: string;
 }
 
@@ -114,17 +117,97 @@ export const setDriveAutoSyncEnabled = (enabled: boolean): void => {
   }
 };
 
+export const getGoogleSheetUrl = (): string => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem(STORAGE_KEYS.GOOGLE_SHEET_URL) || '';
+  }
+  return '';
+};
+
+export const setGoogleSheetUrl = (url: string): string => {
+  const clean = url.trim();
+  if (typeof window !== 'undefined') {
+    if (clean) {
+      localStorage.setItem(STORAGE_KEYS.GOOGLE_SHEET_URL, clean);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.GOOGLE_SHEET_URL);
+    }
+  }
+  notifyStatusChange({ sheetUrl: clean });
+  return clean;
+};
+
 /**
- * Fetch and parse data from the designated Google Drive file.
+ * Fetch and parse data from Google Drive file or Google Sheet via Server Proxy
+ * Bypasses CORS and loads shared files directly without requiring user sign-in!
+ */
+export const fetchFromCloudProxy = async (targetIdOrUrl?: string): Promise<any | null> => {
+  const sheetUrl = getGoogleSheetUrl();
+  const fileId = targetIdOrUrl ? extractDriveFileId(targetIdOrUrl) : getDesignatedDriveFileId();
+  const queryParam = targetIdOrUrl && targetIdOrUrl.includes('spreadsheets')
+    ? `url=${encodeURIComponent(targetIdOrUrl)}`
+    : sheetUrl
+    ? `url=${encodeURIComponent(sheetUrl)}`
+    : `fileId=${encodeURIComponent(fileId)}`;
+
+  try {
+    const response = await fetch(`/api/drive/fetch?${queryParam}`);
+    if (!response.ok) return null;
+    const result = await response.json();
+
+    if (result.success) {
+      if (result.type === 'json' && result.data && Array.isArray(result.data.beneficiaries)) {
+        return result.data;
+      }
+
+      // If CSV content received from Google Sheets
+      if ((result.type === 'csv_sheet' || result.type === 'csv_text') && result.content) {
+        const { items } = parseBeneficiariesFromCsv(result.content);
+        if (items && items.length > 0) {
+          return {
+            version: '3.1',
+            exportedAt: new Date().toISOString(),
+            organization: 'Divisional Secretariat Koralaipattu North (Vaharai) - Google Sheet Live',
+            beneficiaries: items,
+            source: 'google_sheets_live_csv',
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Cloud Proxy] Server proxy fetch error:', err);
+  }
+  return null;
+};
+
+/**
+ * Fetch and parse data from the designated Google Drive file or Google Sheet.
+ * Automatically attempts server-side proxy first (CORS-free), then authenticated API.
  */
 export const fetchFromDesignatedDriveFile = async (customFileId?: string): Promise<any | null> => {
   const fileId = customFileId || getDesignatedDriveFileId();
-  const token = getGoogleAccessToken();
+  notifyStatusChange({ state: 'syncing', fileId, message: 'டிரைவ் / கூகிள் சீட்டிலிருந்து தானாக வாசிக்கப்படுகிறது...' });
 
-  notifyStatusChange({ state: 'syncing', fileId, message: 'டிரைவ் கோப்பிலிருந்து வாசிக்கப்படுகிறது...' });
-
+  // Step 1: Attempt Server Proxy (CORS-safe direct download for shared Drive & Google Sheet)
   try {
-    if (token) {
+    const proxyData = await fetchFromCloudProxy(customFileId);
+    if (proxyData && (Array.isArray(proxyData.beneficiaries) || Array.isArray(proxyData.users))) {
+      notifyStatusChange({
+        state: 'synced',
+        fileId,
+        lastSyncedAt: new Date().toISOString(),
+        message: 'டிரைவ் / கூகிள் சீட்டிலிருந்து தரவுகள் தானாக வெற்றிகரமாக பெறப்பட்டது.',
+      });
+      return proxyData;
+    }
+  } catch (proxyErr) {
+    console.warn('[Google Drive] Proxy load attempt error:', proxyErr);
+  }
+
+  // Step 2: Attempt authenticated Google Drive API if user is signed in
+  const token = getGoogleAccessToken();
+  if (token) {
+    try {
       const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
       const response = await fetch(url, {
         headers: {
@@ -142,36 +225,17 @@ export const fetchFromDesignatedDriveFile = async (customFileId?: string): Promi
         });
         return data;
       }
+    } catch (e) {
+      console.warn('[Google Drive] Authenticated API fetch warning:', e);
     }
-
-    // Fallback: public view link proxy / direct fetch if file is publicly shared
-    try {
-      const publicUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-      const res = await fetch(publicUrl);
-      if (res.ok) {
-        const text = await res.text();
-        const data = JSON.parse(text);
-        notifyStatusChange({
-          state: 'synced',
-          fileId,
-          lastSyncedAt: new Date().toISOString(),
-          message: 'டிரைவ் கோப்பிலிருந்து தரவுகள் பொது இணைப்பின் ஊடாக பெறப்பட்டது.',
-        });
-        return data;
-      }
-    } catch {
-      // CORS might block public download without auth
-    }
-
-    throw new Error('Google Drive access token required or file permission denied');
-  } catch (err: any) {
-    notifyStatusChange({
-      state: 'error',
-      fileId,
-      message: err.message || 'டிரைவ் கோப்பை வாசிக்க முடியவில்லை.',
-    });
-    return null;
   }
+
+  notifyStatusChange({
+    state: 'idle',
+    fileId,
+    message: 'டிரைவ் கோப்பு தயார் நிலையில் உள்ளது.',
+  });
+  return null;
 };
 
 /**

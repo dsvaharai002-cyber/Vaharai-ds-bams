@@ -25,6 +25,9 @@ import {
   onDriveSyncStatusChange,
   DriveSyncStatus,
   getDriveSyncStatus,
+  getGoogleSheetUrl,
+  setGoogleSheetUrl,
+  fetchFromCloudProxy,
 } from '../services/googleDrive';
 import {
   createDatabaseSnapshot,
@@ -65,6 +68,7 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
   const [isEditingFileId, setIsEditingFileId] = useState<boolean>(false);
   const [fileIdInput, setFileIdInput] = useState<string>(() => getDesignatedDriveFileId());
   const [driveSyncState, setDriveSyncState] = useState<DriveSyncStatus>(() => getDriveSyncStatus());
+  const [sheetUrlInput, setSheetUrlInput] = useState<string>(() => getGoogleSheetUrl());
 
   // Confirmation dialog state for destructive/mutating operations
   const [confirmModalItem, setConfirmModalItem] = useState<DriveBackupItem | null>(null);
@@ -305,6 +309,35 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
   const handleToggleAutoSync = (enabled: boolean) => {
     setIsAutoSync(enabled);
     setDriveAutoSyncEnabled(enabled);
+  };
+
+  const handleSaveGoogleSheetUrl = async () => {
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      const saved = setGoogleSheetUrl(sheetUrlInput);
+      if (saved) {
+        setStatusMessage(lang === 'ta' ? 'கூகிள் சீட் இணைப்பு சேமிக்கப்பட்டது. தகவல்கள் பெறப்படுகின்றன...' : 'Google Sheet URL saved. Pulling records...');
+        const data = await fetchFromCloudProxy(saved);
+        if (data && data.beneficiaries && data.beneficiaries.length > 0) {
+          restoreDatabaseFromSnapshot(data);
+          onDatabaseReload();
+          setStatusMessage(
+            lang === 'ta'
+              ? `✅ கூகிள் சீட்டிலிருந்து ${data.beneficiaries.length} பிரஜை விபரங்கள் வெற்றிகரமாகப் பெறப்பட்டன! ஆப் திறக்கும்போது இது தானாகவே லோட் ஆகும்.`
+              : `✅ Loaded ${data.beneficiaries.length} records from Google Sheet! Will auto-load on open.`
+          );
+        } else {
+          setStatusMessage(lang === 'ta' ? 'கூகிள் சீட் இணைப்பு வெற்றிகரமாக சேமிக்கப்பட்டது!' : 'Google Sheet URL linked successfully!');
+        }
+      } else {
+        setStatusMessage(lang === 'ta' ? 'கூகிள் சீட் இணைப்பு நீக்கப்பட்டது.' : 'Google Sheet link removed.');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to sync Google Sheet');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Local JSON File export
@@ -578,6 +611,74 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
             )}
           </div>
         )}
+      </div>
+
+      {/* Google Sheets Live Auto-Sync Card */}
+      <div className="bg-white border-2 border-teal-500/80 rounded-2xl p-5 sm:p-6 shadow-md relative overflow-hidden">
+        <div className="absolute top-0 right-0 bg-teal-600 text-white text-[10px] font-bold tracking-wider uppercase px-4 py-1 rounded-bl-xl shadow-xs">
+          {lang === 'ta' ? 'கூகிள் சீட் நேரலை இணைப்பு' : 'LIVE GOOGLE SHEET AUTO-SYNC'}
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">📊</span>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 tracking-tight">
+                {lang === 'ta' ? 'கூகிள் சீட் நேரலை இணைப்பு & தானியங்கி லோடிங்' : 'Google Sheets Live Auto-Sync & Startup Loading'}
+              </h3>
+              <p className="text-xs text-slate-600 mt-0.5">
+                {lang === 'ta'
+                  ? 'உங்கள் கூகிள் சீட்டின் (Google Sheets) பகிர்வு இணைப்பை இங்கே இடவும். ஆப் திறந்தவுடனேயே சீட்டிலுள்ள அனைத்து தகவல்களும் தானாக லோட் ஆகும்!'
+                  : 'Enter your Google Sheets link below. Data from your Google Sheet will load automatically whenever the system is opened!'}
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
+            <label className="text-[11px] font-bold text-slate-700 block">
+              {lang === 'ta' ? 'Google Sheet இணைய முகவரி (URL):' : 'Google Sheet URL:'}
+            </label>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <input
+                type="text"
+                value={sheetUrlInput}
+                onChange={(e) => setSheetUrlInput(e.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/1XXXXX/edit#gid=0"
+                className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-teal-500 outline-hidden"
+              />
+              <button
+                type="button"
+                onClick={handleSaveGoogleSheetUrl}
+                disabled={isLoading}
+                className="px-4 py-2 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 shrink-0"
+              >
+                <span>🔗</span>
+                <span>{lang === 'ta' ? 'சீட்டை இணைத்து லோட் செய்' : 'Link & Load Sheet'}</span>
+              </button>
+            </div>
+
+            {getGoogleSheetUrl() && (
+              <div className="flex items-center justify-between text-[11px] text-teal-800 bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-lg">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="w-2 h-2 rounded-full bg-teal-500 inline-block animate-pulse shrink-0"></span>
+                  <span className="font-semibold">{lang === 'ta' ? 'இணைக்கப்பட்ட சீட்:' : 'Linked Sheet:'}</span>
+                  <span className="truncate font-mono text-[10px]">{getGoogleSheetUrl()}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSheetUrlInput('');
+                    setGoogleSheetUrl('');
+                    setStatusMessage(lang === 'ta' ? 'கூகிள் சீட் இணைப்பு நீக்கப்பட்டது.' : 'Sheet disconnected.');
+                  }}
+                  className="text-rose-700 hover:underline font-bold shrink-0 ml-2"
+                >
+                  {lang === 'ta' ? 'நீக்கு' : 'Remove'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Clear Guidance Card: Where data is stored & how to switch accounts */}

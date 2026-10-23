@@ -47,12 +47,14 @@ import { AiReportView } from './components/AiReportView';
 import { ServiceAuditView } from './components/ServiceAuditView';
 import { AssistanceDistributionView } from './components/AssistanceDistributionView';
 import { BarcodeScannerModal } from './components/BarcodeScannerModal';
+import { Sidebar } from './components/Sidebar';
 
 export default function App() {
   // Authentication & Session
   const [currentUser, setCurrentUser] = useState<User | null>(() => getActiveUserSession());
   const [lang, setLang] = useState<Language>('ta');
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
 
   // Persistent Databases
   const [users, setUsers] = useState<User[]>(() => loadUsers());
@@ -129,38 +131,47 @@ export default function App() {
     };
   }, []);
 
-  // Central Google Drive Master File & Server Synchronization across multiple office computers
+  // Central Google Drive & Server Synchronization across multiple office computers
   useEffect(() => {
     let isMounted = true;
 
-    // Boot: Attempt to load from the designated Google Drive file first
+    // Boot: Attempt to load from the designated Google Drive file or Google Sheet via Server Proxy
     const pullFromDesignatedDrive = async () => {
-      if (isGoogleDriveAuthenticated()) {
-        try {
-          const driveData = await fetchFromDesignatedDriveFile();
-          if (driveData && isMounted && Array.isArray(driveData.beneficiaries)) {
-            restoreDatabaseFromSnapshot(driveData);
-            handleDatabaseReload();
-            console.log('[Google Drive] Boot: Master database loaded from designated file.');
-          }
-        } catch (e) {
-          console.warn('[Google Drive] Boot fetch warning:', e);
+      try {
+        const driveData = await fetchFromDesignatedDriveFile();
+        if (driveData && isMounted && Array.isArray(driveData.beneficiaries) && driveData.beneficiaries.length > 0) {
+          const localItems = loadBeneficiaries();
+          // Merge: Preserve all local newly added records, add any remote records
+          const map = new Map<string, Beneficiary>();
+          driveData.beneficiaries.forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
+          localItems.forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
+          const merged = Array.from(map.values());
+          saveBeneficiaries(merged);
+          setBeneficiaries(merged);
+          console.log(`[Google Drive] Boot: Auto-loaded ${driveData.beneficiaries.length} records.`);
         }
+      } catch (e) {
+        console.warn('[Google Drive] Boot fetch warning:', e);
       }
     };
 
     const syncInit = async () => {
       await pullFromDesignatedDrive();
 
-      // Check server API only if available
+      // Check central database API
       try {
         if (isServerApiAvailable()) {
           const central = await fetchCentralDatabase();
           if (central && isMounted) {
-            restoreDatabaseFromSnapshot(central);
-            handleDatabaseReload();
-          } else if (isServerApiAvailable()) {
-            await pushToCentralDatabase();
+            if (Array.isArray(central.beneficiaries) && central.beneficiaries.length > 0) {
+              const localItems = loadBeneficiaries();
+              const map = new Map<string, Beneficiary>();
+              central.beneficiaries.forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
+              localItems.forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
+              const merged = Array.from(map.values());
+              saveBeneficiaries(merged);
+              setBeneficiaries(merged);
+            }
           }
         }
       } catch (err) {
@@ -170,20 +181,26 @@ export default function App() {
 
     syncInit();
 
-    // Polling interval:
-    // 1. If Google Drive is authenticated, check designated file every 25 seconds for remote changes
-    // 2. If Server API is available, poll server
+    // Polling interval: NEVER delete or clobber local data!
+    // Safely merges new records and ensures newly uploaded CSVs are preserved!
     const syncInterval = setInterval(async () => {
       if (!isMounted) return;
 
+      // 1. Google Drive sync check
       if (isGoogleDriveAuthenticated()) {
         try {
           const driveData = await fetchFromDesignatedDriveFile();
           if (driveData && isMounted && Array.isArray(driveData.beneficiaries)) {
-            const currentCount = loadBeneficiaries().length;
-            if (driveData.beneficiaries.length !== currentCount) {
-              restoreDatabaseFromSnapshot(driveData);
-              handleDatabaseReload();
+            const local = loadBeneficiaries();
+            const existingNics = new Set(local.map((b) => b.nic));
+            const newFromRemote = driveData.beneficiaries.filter((b: Beneficiary) => !existingNics.has(b.nic));
+            if (newFromRemote.length > 0) {
+              const merged = [...local, ...newFromRemote];
+              saveBeneficiaries(merged);
+              setBeneficiaries(merged);
+            } else if (local.length > driveData.beneficiaries.length) {
+              // Local has more records (e.g. newly imported CSV) -> save to Google Drive!
+              await saveToDesignatedDriveFile(createDatabaseSnapshot());
             }
           }
         } catch {
@@ -191,14 +208,38 @@ export default function App() {
         }
       }
 
+      // 2. Central Server sync check
       if (isServerApiAvailable()) {
         try {
           const central = await fetchCentralDatabase();
           if (central && isMounted) {
-            if (Array.isArray(central.tokens)) setTokens(central.tokens);
-            if (Array.isArray(central.beneficiaries)) setBeneficiaries(central.beneficiaries);
-            if (Array.isArray(central.assistance)) setAssistanceRecords(central.assistance);
-            if (Array.isArray(central.auditLogs)) setAuditLogs(central.auditLogs);
+            const local = loadBeneficiaries();
+            if (Array.isArray(central.beneficiaries) && central.beneficiaries.length > 0) {
+              const existingNics = new Set(local.map((b) => b.nic));
+              const newFromCentral = central.beneficiaries.filter((b: Beneficiary) => !existingNics.has(b.nic));
+              if (newFromCentral.length > 0) {
+                const merged = [...local, ...newFromCentral];
+                saveBeneficiaries(merged);
+                setBeneficiaries(merged);
+              } else if (local.length > central.beneficiaries.length) {
+                // Local has more records (e.g. newly imported CSV) -> push to central server!
+                await pushToCentralDatabase(createDatabaseSnapshot());
+              }
+            }
+            if (Array.isArray(central.tokens) && central.tokens.length > 0) {
+              setTokens(central.tokens);
+              saveTokens(central.tokens);
+            }
+            if (Array.isArray(central.assistance) && central.assistance.length > 0) {
+              const localAssistance = loadAssistanceRecords();
+              const existingIds = new Set(localAssistance.map((a) => a.id));
+              const newAid = central.assistance.filter((a: AssistanceRecord) => !existingIds.has(a.id));
+              if (newAid.length > 0) {
+                const mergedAid = [...localAssistance, ...newAid];
+                saveAssistanceRecords(mergedAid);
+                setAssistanceRecords(mergedAid);
+              }
+            }
           }
         } catch {
           // offline fallback
@@ -311,6 +352,36 @@ export default function App() {
     }
   };
 
+  const handleSaveToDriveNow = async () => {
+    setIsManualSyncing(true);
+    setSyncToastMessage(lang === 'ta' ? 'டிரைவில் சேமிக்கப்படுகிறது...' : 'Saving to Google Drive & Central Server...');
+    try {
+      const snapshot = createDatabaseSnapshot();
+      await pushToCentralDatabase(snapshot);
+
+      if (isGoogleDriveAuthenticated()) {
+        const res = await saveToDesignatedDriveFile(snapshot);
+        setDriveSyncStatus(getDriveSyncStatus());
+        setSyncToastMessage(
+          lang === 'ta'
+            ? `✅ கூகிள் டிரைவில் வெற்றிகரமாக சேமிக்கப்பட்டது! (${res.fileName})`
+            : `✅ Successfully saved to Google Drive! (${res.fileName})`
+        );
+      } else {
+        setSyncToastMessage(
+          lang === 'ta'
+            ? 'ℹ️ மத்திய சர்வரில் சேமிக்கப்பட்டது. Google Drive-இல் நேரடியாக சேமிக்க Drive பக்கத்தில் கணக்கை இணைக்கவும்.'
+            : 'ℹ️ Saved to Central Server. Connect Google Drive in Drive settings to save to your personal Drive.'
+        );
+      }
+    } catch (err: any) {
+      setSyncToastMessage(err.message || 'Drive save failed');
+    } finally {
+      setIsManualSyncing(false);
+      setTimeout(() => setSyncToastMessage(''), 5000);
+    }
+  };
+
   const handleConnectDriveDirect = async () => {
     try {
       setIsManualSyncing(true);
@@ -409,7 +480,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans w-full max-w-full overflow-x-hidden">
-      {/* 3-Zone Header */}
+      {/* Top Header */}
       <Header
         currentUser={currentUser}
         currentTab={safeTab}
@@ -418,132 +489,43 @@ export default function App() {
         setLang={setLang}
         onLogout={handleLogout}
         onOpenScanner={() => setShowScanner(true)}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        isDriveConnected={isDriveConnected}
+        driveSyncStatus={driveSyncStatus}
+        isSyncing={isManualSyncing}
+        onSaveToDriveNow={handleSaveToDriveNow}
       />
 
-      {/* Cloud & Drive Real-Time Sync Bar */}
-      <div className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2 no-print shadow-xs">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="flex h-2.5 w-2.5 relative">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isDriveConnected ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
-              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isDriveConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-            </span>
-
-            <span className="font-bold text-slate-800">
-              {lang === 'ta' ? 'டிரைவ் நேரடி ஒத்திசைவு:' : 'Drive Live Sync:'}
-            </span>
-
-            {isDriveConnected ? (
-              <div className="flex items-center gap-1.5 text-emerald-800 font-medium">
-                <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[11px] font-semibold">
-                  {lang === 'ta' ? 'இணைக்கப்பட்டுள்ளது' : 'Connected'} ({driveUser?.email || 'Google Drive'})
-                </span>
-                <span className="text-slate-400 hidden md:inline">|</span>
-                <span className="text-[11px] text-slate-600 font-mono hidden md:inline">
-                  {lang === 'ta' ? 'கோப்பு:' : 'File:'} {getDesignatedDriveFileId().slice(0, 8)}...
-                </span>
-                {driveSyncStatus.lastSyncedAt && (
-                  <span className="text-[10px] text-slate-500">
-                    ({lang === 'ta' ? 'கடைசி:' : 'Last:'} {new Date(driveSyncStatus.lastSyncedAt).toLocaleTimeString()})
-                  </span>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-amber-800">
-                <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[11px] font-semibold">
-                  {lang === 'ta' ? 'டிரைவ் இணைக்கப்படவில்லை (லோக்கல் ஸ்டோரேஜ் மட்டும்)' : 'Local Storage Only (Drive Disconnected)'}
-                </span>
-                <span className="text-[11px] text-slate-500 hidden sm:inline">
-                  {lang === 'ta'
-                    ? 'பல வுரவுசர்களில் தகவலைப் பார்க்க கூகிள் டிரைவை இணைக்கவும்'
-                    : 'Connect Drive for cross-browser sync'}
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            {syncToastMessage && (
-              <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded text-[11px] font-semibold animate-fade-in">
-                {syncToastMessage}
-              </span>
-            )}
-
-            <button
-              type="button"
-              onClick={handleQuickSyncNow}
-              disabled={isManualSyncing}
-              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold transition-colors flex items-center gap-1 border border-slate-300"
-              title="Pull latest data or push local changes"
-            >
-              <span className={isManualSyncing ? 'animate-spin' : ''}>🔄</span>
-              <span>{isManualSyncing ? (lang === 'ta' ? 'ஒத்திசைக்கிறது...' : 'Syncing...') : (lang === 'ta' ? 'இப்போதே ஒத்திசை' : 'Sync Now')}</span>
-            </button>
-
-            {/* Quick Local JSON Backup & Restore Buttons (Resilient Offline/Cross-Browser) */}
-            <button
-              type="button"
-              onClick={handleDownloadQuickBackup}
-              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold transition-colors flex items-center gap-1 border border-slate-300"
-              title={lang === 'ta' ? 'முழுமையான தரவுத்தளத்தை JSON கோப்பாக சேமிக்கவும்' : 'Save full database backup to JSON file'}
-            >
-              <span>💾</span>
-              <span>{lang === 'ta' ? 'JSON காப்பு' : 'Download Backup'}</span>
-            </button>
-
-            <label
-              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold transition-colors flex items-center gap-1 border border-slate-300 cursor-pointer"
-              title={lang === 'ta' ? 'JSON காப்புப்பிரதி கோப்பிலிருந்து தரவுகளை ஏற்றவும்' : 'Restore database from JSON file'}
-            >
-              <span>⬆️</span>
-              <span>{lang === 'ta' ? 'கோப்பை ஏற்று' : 'Restore'}</span>
-              <input
-                type="file"
-                accept=".json"
-                onChange={handleUploadQuickBackup}
-                className="hidden"
-              />
-            </label>
-
-            {!isDriveConnected ? (
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleConnectDriveDirect}
-                  disabled={isManualSyncing}
-                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition-colors flex items-center gap-1 shadow-xs"
-                >
-                  <span>☁️</span>
-                  <span>{lang === 'ta' ? 'கூகிள் டிரைவை இணைக்க' : 'Connect Google Drive'}</span>
-                </button>
-
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => setCurrentTab('drive')}
-                    className="px-2 py-1 text-slate-600 hover:text-slate-900 text-[11px] font-medium underline"
-                  >
-                    {lang === 'ta' ? 'அமைப்புகள்' : 'Settings'}
-                  </button>
-                )}
-              </div>
-            ) : (
-              isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => setCurrentTab('drive')}
-                  className="px-2 py-1 text-slate-600 hover:text-slate-900 text-[11px] font-medium underline"
-                >
-                  {lang === 'ta' ? 'டிரைவ் கோப்பு அமைப்புகள்' : 'Drive File Settings'}
-                </button>
-              )
-            )}
-          </div>
+      {/* Floating Status / Sync Toast */}
+      {syncToastMessage && (
+        <div className="fixed top-12 right-4 z-50 bg-emerald-950 text-white px-4 py-2.5 rounded-xl shadow-2xl border border-emerald-700 flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
+          <span>{syncToastMessage}</span>
         </div>
-      </div>
+      )}
 
-      {/* Main View Area with strict overflow safety */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 no-print overflow-x-hidden">
+      {/* Main Layout: Left Sidebar + Page View */}
+      <div className="flex-1 flex overflow-hidden w-full">
+        {currentUser && !isNormal && (
+          <Sidebar
+            currentUser={currentUser}
+            currentTab={safeTab}
+            setCurrentTab={setCurrentTab}
+            lang={lang}
+            onLogout={handleLogout}
+            onOpenScanner={() => setShowScanner(true)}
+            isOpen={sidebarOpen}
+            onToggle={() => setSidebarOpen(!sidebarOpen)}
+            isDriveConnected={isDriveConnected}
+            driveSyncStatus={driveSyncStatus}
+            isSyncing={isManualSyncing}
+            onQuickSync={handleQuickSyncNow}
+            onSaveToDriveNow={handleSaveToDriveNow}
+          />
+        )}
+
+        {/* Main View Area with strict overflow safety */}
+        <main className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-6 no-print overflow-x-hidden max-w-7xl mx-auto w-full">
         {safeTab === 'dashboard' && (
           <DashboardView
             beneficiaries={beneficiaries}
@@ -666,6 +648,7 @@ export default function App() {
           />
         )}
       </main>
+      </div>
 
       {/* Barcode / NIC Scanner Modal */}
       {showScanner && (

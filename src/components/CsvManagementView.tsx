@@ -30,6 +30,9 @@ import {
   Building,
   UserCheck,
 } from 'lucide-react';
+import { createDatabaseSnapshot, pushToCentralDatabase } from '../services/storage';
+import { saveToDesignatedDriveFile, isDriveAutoSyncEnabled } from '../services/googleDrive';
+import { isGoogleDriveAuthenticated } from '../services/auth';
 
 interface CsvManagementViewProps {
   beneficiaries: Beneficiary[];
@@ -214,6 +217,19 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
     setFileContent('');
     setFileName('');
     setTimeout(() => setSuccessBanner(''), 5000);
+
+    // Immediately push to central server and Google Drive so background polling never overwrites this CSV!
+    setTimeout(async () => {
+      try {
+        const snapshot = createDatabaseSnapshot();
+        await pushToCentralDatabase(snapshot);
+        if (isGoogleDriveAuthenticated() && isDriveAutoSyncEnabled()) {
+          await saveToDesignatedDriveFile(snapshot);
+        }
+      } catch (err) {
+        console.warn('[CSV Import] Instant cloud sync notification:', err);
+      }
+    }, 50);
   };
 
   return (

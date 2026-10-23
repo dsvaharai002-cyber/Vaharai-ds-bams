@@ -326,11 +326,50 @@ export default function App() {
       }
       setSyncToastMessage(lang === 'ta' ? 'கூகிள் டிரைவ் வெற்றிகரமாக இணைக்கப்பட்டது!' : 'Google Drive connected successfully!');
     } catch (e: any) {
+      console.warn('Drive direct connect:', e);
       setSyncToastMessage(e.message || 'Drive connect failed');
+      // If admin, open Drive settings tab to show alternatives
+      if (currentUser?.role === 'SUPERADMIN' || currentUser?.role === 'ADMIN 1' || currentUser?.role === 'ADMIN 2') {
+        setCurrentTab('drive');
+      }
     } finally {
       setIsManualSyncing(false);
-      setTimeout(() => setSyncToastMessage(''), 4000);
+      setTimeout(() => setSyncToastMessage(''), 5000);
     }
+  };
+
+  const handleDownloadQuickBackup = () => {
+    const snapshot = createDatabaseSnapshot();
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(snapshot, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('download', `vaharai_ds_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    setSyncToastMessage(lang === 'ta' ? 'JSON காப்புப்பிரதி பதிவிறக்கப்பட்டது!' : 'JSON backup downloaded!');
+    setTimeout(() => setSyncToastMessage(''), 4000);
+  };
+
+  const handleUploadQuickBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const snapshot = JSON.parse(text);
+        restoreDatabaseFromSnapshot(snapshot);
+        handleDatabaseReload();
+        setSyncToastMessage(lang === 'ta' ? 'தரவுகள் வெற்றிகரமாக மீட்டமைக்கப்பட்டன!' : 'Database successfully restored!');
+      } catch (err: any) {
+        setSyncToastMessage(lang === 'ta' ? 'செல்லுபடியற்ற JSON கோப்பு!' : 'Invalid JSON file!');
+      } finally {
+        setTimeout(() => setSyncToastMessage(''), 4000);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   // If user signed out, show official login screen
@@ -441,16 +480,53 @@ export default function App() {
               <span>{isManualSyncing ? (lang === 'ta' ? 'ஒத்திசைக்கிறது...' : 'Syncing...') : (lang === 'ta' ? 'இப்போதே ஒத்திசை' : 'Sync Now')}</span>
             </button>
 
+            {/* Quick Local JSON Backup & Restore Buttons (Resilient Offline/Cross-Browser) */}
+            <button
+              type="button"
+              onClick={handleDownloadQuickBackup}
+              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold transition-colors flex items-center gap-1 border border-slate-300"
+              title={lang === 'ta' ? 'முழுமையான தரவுத்தளத்தை JSON கோப்பாக சேமிக்கவும்' : 'Save full database backup to JSON file'}
+            >
+              <span>💾</span>
+              <span>{lang === 'ta' ? 'JSON காப்பு' : 'Download Backup'}</span>
+            </button>
+
+            <label
+              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold transition-colors flex items-center gap-1 border border-slate-300 cursor-pointer"
+              title={lang === 'ta' ? 'JSON காப்புப்பிரதி கோப்பிலிருந்து தரவுகளை ஏற்றவும்' : 'Restore database from JSON file'}
+            >
+              <span>⬆️</span>
+              <span>{lang === 'ta' ? 'கோப்பை ஏற்று' : 'Restore'}</span>
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleUploadQuickBackup}
+                className="hidden"
+              />
+            </label>
+
             {!isDriveConnected ? (
-              <button
-                type="button"
-                onClick={handleConnectDriveDirect}
-                disabled={isManualSyncing}
-                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition-colors flex items-center gap-1 shadow-xs"
-              >
-                <span>☁️</span>
-                <span>{lang === 'ta' ? 'கூகிள் டிரைவை இணைக்க' : 'Connect Google Drive'}</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleConnectDriveDirect}
+                  disabled={isManualSyncing}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition-colors flex items-center gap-1 shadow-xs"
+                >
+                  <span>☁️</span>
+                  <span>{lang === 'ta' ? 'கூகிள் டிரைவை இணைக்க' : 'Connect Google Drive'}</span>
+                </button>
+
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setCurrentTab('drive')}
+                    className="px-2 py-1 text-slate-600 hover:text-slate-900 text-[11px] font-medium underline"
+                  >
+                    {lang === 'ta' ? 'அமைப்புகள்' : 'Settings'}
+                  </button>
+                )}
+              </div>
             ) : (
               isAdmin && (
                 <button

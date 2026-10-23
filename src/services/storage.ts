@@ -155,6 +155,15 @@ export const DEFAULT_USERS: User[] = ((initialDatabaseSeed as any)?.users as Use
     createdAt: '2026-01-10T08:00:00Z',
   },
   {
+    id: '2026',
+    password: '123',
+    name: 'hhhh',
+    role: 'DATAENRY OFFCER',
+    division: 'ALL',
+    status: 'ACTIVE',
+    createdAt: '2026-01-10T08:00:00Z',
+  },
+  {
     id: '555',
     password: '123',
     name: 'e (Front Desk Registrar)',
@@ -961,12 +970,9 @@ export const fetchCentralDatabase = async (): Promise<any | null> => {
 
   try {
     const res = await fetch('/api/database');
-    if (res.status === 404) {
-      serverApiAvailable = false;
-      console.info('[Vaharai DS] Central /api/database returned 404. Switching to Cloud Drive / Local Storage mode.');
-      return null;
-    }
     if (!res.ok) {
+      serverApiAvailable = false;
+      console.info(`[Vaharai DS] Central /api/database returned status ${res.status}. Active mode: Cloud Drive & Local Storage.`);
       return null;
     }
     serverApiAvailable = true;
@@ -993,12 +999,12 @@ export const pushToCentralDatabase = async (snapshot?: any): Promise<boolean> =>
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (res.status === 404) {
+    if (!res.ok) {
       serverApiAvailable = false;
       return false;
     }
-    serverApiAvailable = res.ok;
-    return res.ok;
+    serverApiAvailable = true;
+    return true;
   } catch {
     serverApiAvailable = false;
     return false;

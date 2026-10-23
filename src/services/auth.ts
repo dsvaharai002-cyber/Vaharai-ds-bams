@@ -2,6 +2,8 @@ import { initializeApp, getApps } from 'firebase/app';
 import { 
   getAuth, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider, 
   onAuthStateChanged, 
   signOut,
@@ -28,6 +30,26 @@ try {
     if (savedToken) {
       cachedAccessToken = savedToken;
     }
+
+    // Check if returning from a signInWithRedirect operation
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result) {
+          const credential = GoogleAuthProvider.credentialFromResult(result);
+          if (credential?.accessToken) {
+            setGoogleAccessToken(credential.accessToken);
+            const userInfo = {
+              email: result.user.email,
+              displayName: result.user.displayName,
+            };
+            setGoogleDriveUser(userInfo);
+            window.dispatchEvent(new CustomEvent('vaharai_db_updated', { detail: { action: 'DRIVE_CONNECTED' } }));
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Firebase redirect result check:', err);
+      });
   }
 } catch {
   // ignore storage errors
@@ -62,6 +84,9 @@ export const setGoogleDriveUser = (user: { email?: string | null; displayName?: 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/drive');
 provider.addScope('https://www.googleapis.com/auth/drive.file');
+provider.setCustomParameters({
+  prompt: 'select_account',
+});
 
 export const initFirebaseAuth = (
   onSuccess?: (user: FirebaseUser, token: string) => void,
@@ -81,6 +106,10 @@ export const initFirebaseAuth = (
       }
     }
   });
+};
+
+export const signInWithGoogleDriveRedirect = async () => {
+  await signInWithRedirect(auth, provider);
 };
 
 export const signInWithGoogleDrive = async (): Promise<{ user: { email?: string | null; displayName?: string | null }; accessToken: string }> => {
@@ -110,6 +139,15 @@ export const signInWithGoogleDrive = async (): Promise<{ user: { email?: string 
       } catch (gisErr: any) {
         console.error('GIS fallback also failed:', gisErr);
       }
+    }
+
+    if (err.code === 'auth/unauthorized-domain') {
+      const host = typeof window !== 'undefined' ? window.location.hostname : 'இந்த முகவரி';
+      throw new Error(`டொமைன் (${host}) Firebase Authorized Domains இல் இணைக்கப்படவில்லை. Firebase Console -> Authentication -> Settings -> Authorized Domains இல் '${host}' ஐ சேர்க்கவும்.`);
+    }
+
+    if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+      throw new Error('பாப்-அப் சாளரம் மூடப்பட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும் அல்லது முழு பக்க திருப்பிவிடல் (Redirect) முறையைப் பயன்படுத்தவும்.');
     }
 
     throw err;

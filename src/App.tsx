@@ -49,7 +49,7 @@ export default function App() {
   // Quick Barcode Scanner Modal
   const [showScanner, setShowScanner] = useState<boolean>(false);
 
-  // Auto-login to Super Admin (User 789) if no active session for instant testing
+  // Restore active user session if exists
   useEffect(() => {
     const session = getActiveUserSession();
     if (session) {
@@ -61,12 +61,6 @@ export default function App() {
         } else if (found.role === 'NORMAL') {
           setCurrentTab('live-display');
         }
-      }
-    } else {
-      const defaultSuperAdmin = users.find((u) => u.id === '789') || users[0];
-      if (defaultSuperAdmin) {
-        setCurrentUser(defaultSuperAdmin);
-        setActiveUserSession(defaultSuperAdmin);
       }
     }
   }, []);

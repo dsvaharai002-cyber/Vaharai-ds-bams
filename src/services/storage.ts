@@ -10,14 +10,15 @@ import {
   AssistanceRecord,
   DuplicateAidCheckResult
 } from '../types';
+import initialDatabaseSeed from '../data/central_database.json';
 
 const STORAGE_KEYS = {
-  USERS: 'vaharai_ds_users_v3',
-  BENEFICIARIES: 'vaharai_ds_beneficiaries_v3',
-  TOKENS: 'vaharai_ds_tokens_v3',
-  DIVISIONS: 'vaharai_ds_divisions_v5',
-  AUDIT_LOGS: 'vaharai_ds_audit_logs_v3',
-  ASSISTANCE: 'vaharai_ds_assistance_v3',
+  USERS: 'vaharai_ds_users_v4',
+  BENEFICIARIES: 'vaharai_ds_beneficiaries_v4',
+  TOKENS: 'vaharai_ds_tokens_v4',
+  DIVISIONS: 'vaharai_ds_divisions_v6',
+  AUDIT_LOGS: 'vaharai_ds_audit_logs_v4',
+  ASSISTANCE: 'vaharai_ds_assistance_v4',
 };
 
 // Age calculation helper
@@ -75,7 +76,7 @@ export const generateUniqueFamilyQrPayload = (familyCode: string, divisionCode: 
 // 14. PUNAANAI EAST (211B)
 // 15. PAALCHENAI (213A)
 // 16. MANKERNI SOUTH (211G)
-export const DEFAULT_DIVISIONS: GNDivision[] = [
+export const DEFAULT_DIVISIONS: GNDivision[] = ((initialDatabaseSeed as any)?.divisions as GNDivision[]) || [
   { code: '213', nameEn: 'Kathiraveli', nameTa: 'கதிரவெளி', gnOfficerName: 'A. Balamurugan', population: 2750, households: 690 },
   { code: '213B', nameEn: 'Kaddumurivu', nameTa: 'கட்டுமுறிவு', gnOfficerName: 'M. Sivalingam', population: 1420, households: 360 },
   { code: '211C', nameEn: 'Panichchankerni', nameTa: 'பனிச்சங்கேணி', gnOfficerName: 'V. Suresh', population: 2310, households: 580 },
@@ -106,7 +107,7 @@ export const getDivisionByCode = (code: string, divisions: GNDivision[] = DEFAUL
 };
 
 // Initial Staff Users matching prompt: Admin 1, Admin 2, Super Admin, GN, Data Entry, Reception, and Normal (TV Display)
-export const DEFAULT_USERS: User[] = [
+export const DEFAULT_USERS: User[] = ((initialDatabaseSeed as any)?.users as User[]) || [
   {
     id: '123',
     password: '123',
@@ -209,7 +210,7 @@ export const DEFAULT_USERS: User[] = [
 ];
 
 // Initial Realistic Citizens / Beneficiaries in Vaharai
-export const DEFAULT_BENEFICIARIES: Beneficiary[] = [
+export const DEFAULT_BENEFICIARIES: Beneficiary[] = ((initialDatabaseSeed as any)?.beneficiaries as Beneficiary[]) || [
   // Family 1: 5 Members sharing SAME Family Code & SAME Family Master QR Code!
   {
     id: 'VHR-211-2026-0001',
@@ -481,7 +482,7 @@ export const DEFAULT_BENEFICIARIES: Beneficiary[] = [
 ];
 
 // Initial Queue Tokens with officerToMeet, waiting time, and completion audit details
-export const DEFAULT_TOKENS: QueueToken[] = [
+export const DEFAULT_TOKENS: QueueToken[] = ((initialDatabaseSeed as any)?.tokens as QueueToken[]) || [
   {
     id: 'T-101',
     tokenNumber: 'L-101',
@@ -706,7 +707,7 @@ export const logAuditAction = (userId: string, userName: string, action: string,
 const saveStoredData = <T>(key: string, data: T) => setStoredData(key, data);
 
 // ================= ASSISTANCE / RELIEF DISTRIBUTION STORAGE ================= //
-export const DEFAULT_ASSISTANCE_RECORDS: AssistanceRecord[] = [
+export const DEFAULT_ASSISTANCE_RECORDS: AssistanceRecord[] = ((initialDatabaseSeed as any)?.assistance as AssistanceRecord[]) || [
   {
     id: 'AID-2026-0001',
     familyCode: 'FAM-211-042',

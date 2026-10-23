@@ -44,12 +44,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
     }
   };
 
-  const handleQuickDemoLogin = (user: User) => {
-    setUserIdInput(user.id);
-    setPasswordInput(user.password);
-    onLoginSuccess(user);
-  };
-
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4 relative overflow-hidden">
       {/* Subtle Background Pattern */}
@@ -132,40 +126,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
               {t.login}
             </button>
           </form>
-
-          {/* Quick Demo Access Bar supporting Admin 1, Admin 2, Normal, Super Admin, GN, etc. */}
-          <div className="mt-6 pt-5 border-t border-slate-200">
-            <div className="text-[11px] font-bold text-slate-700 mb-2 flex items-center justify-between">
-              <span>{lang === 'ta' ? 'பயனர் ரோல் விரைவு தெரிவு (Demo Accounts):' : 'Select user role account:'}</span>
-              <span className="text-[10px] text-slate-400 font-mono">Password: 123</span>
-            </div>
-            <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-              {users.map((u) => {
-                let badgeColor = 'bg-slate-200 text-slate-800';
-                if (u.role === 'SUPERADMIN') badgeColor = 'bg-red-100 text-red-900 border border-red-200';
-                if (u.role === 'ADMIN 1') badgeColor = 'bg-purple-100 text-purple-900 border border-purple-200 font-bold';
-                if (u.role === 'ADMIN 2') badgeColor = 'bg-indigo-100 text-indigo-900 border border-indigo-200 font-bold';
-                if (u.role === 'NORMAL') badgeColor = 'bg-amber-300 text-slate-950 font-black border border-amber-400';
-                if (u.role === 'GRAMANIILATHARI') badgeColor = 'bg-emerald-100 text-emerald-900 border border-emerald-200';
-
-                return (
-                  <button
-                    key={u.id}
-                    onClick={() => handleQuickDemoLogin(u)}
-                    className="w-full p-2 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-lg text-left text-xs flex items-center justify-between transition-colors"
-                  >
-                    <div className="truncate pr-2">
-                      <div className="font-bold text-slate-900 truncate">{u.name}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">ID: {u.id}</div>
-                    </div>
-                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-semibold shrink-0 ${badgeColor}`}>
-                      {u.role}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </div>
       </div>
     </div>

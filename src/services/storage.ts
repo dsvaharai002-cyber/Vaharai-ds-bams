@@ -11,6 +11,7 @@ import {
   DuplicateAidCheckResult
 } from '../types';
 import initialDatabaseSeed from '../data/central_database.json';
+import { scheduleAutoDriveSync } from './googleDrive';
 
 const STORAGE_KEYS = {
   USERS: 'vaharai_ds_users_v4',
@@ -901,35 +902,90 @@ export const restoreDatabaseFromSnapshot = (snapshot: any): boolean => {
   if (Array.isArray(snapshot.divisions)) setStoredData(STORAGE_KEYS.DIVISIONS, snapshot.divisions);
   if (Array.isArray(snapshot.assistance)) setStoredData(STORAGE_KEYS.ASSISTANCE, snapshot.assistance);
   if (Array.isArray(snapshot.auditLogs)) setStoredData(STORAGE_KEYS.AUDIT_LOGS, snapshot.auditLogs);
+  
+  notifyCrossTabSync('DATABASE_RESTORED');
   return true;
 };
 
-// ================= CENTRAL SERVER DATABASE SYNCHRONIZATION ================= //
+if (typeof window !== 'undefined') {
+  (window as any).__vaharai_create_snapshot = createDatabaseSnapshot;
+}
+
+// ================= CROSS-TAB & BROADCAST SYNCHRONIZATION ================= //
+export const notifyCrossTabSync = (actionType: string = 'DATA_UPDATED') => {
+  if (typeof window === 'undefined') return;
+  try {
+    if ('BroadcastChannel' in window) {
+      const channel = new BroadcastChannel('vaharai_ds_sync_channel');
+      channel.postMessage({ type: actionType, timestamp: Date.now() });
+      channel.close();
+    }
+    window.dispatchEvent(new CustomEvent('vaharai_db_updated', { detail: { action: actionType } }));
+  } catch {
+    // ignore
+  }
+};
+
+// ================= CENTRAL SERVER / GOOGLE DRIVE SYNCHRONIZATION ================= //
 let syncDebounceTimer: any = null;
+let serverApiAvailable: boolean | null = null; // null = not checked yet, false = 404/not available, true = available
+
+export const isServerApiAvailable = (): boolean => {
+  return serverApiAvailable !== false;
+};
 
 export const scheduleCentralSync = () => {
   if (typeof window === 'undefined') return;
+
+  // Broadcast to other open tabs and windows on the same browser immediately!
+  notifyCrossTabSync('RECORD_SAVED');
+
   if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
   syncDebounceTimer = setTimeout(() => {
-    pushToCentralDatabase();
+    const snapshot = createDatabaseSnapshot();
+    // 1. Automatically push to the designated Google Drive file if authenticated
+    scheduleAutoDriveSync(snapshot);
+
+    // 2. Also push to central backend server if available
+    if (serverApiAvailable !== false) {
+      pushToCentralDatabase(snapshot);
+    }
   }, 800);
 };
 
 export const fetchCentralDatabase = async (): Promise<any | null> => {
+  // If we already know /api/database does not exist on this host (e.g. Vercel static deployment), don't spam 404
+  if (serverApiAvailable === false) {
+    return null;
+  }
+
   try {
     const res = await fetch('/api/database');
-    if (!res.ok) return null;
+    if (res.status === 404) {
+      serverApiAvailable = false;
+      console.info('[Vaharai DS] Central /api/database returned 404. Switching to Cloud Drive / Local Storage mode.');
+      return null;
+    }
+    if (!res.ok) {
+      return null;
+    }
+    serverApiAvailable = true;
     const body = await res.json();
     if (body.success && body.data) {
       return body.data;
     }
     return null;
-  } catch (err) {
+  } catch {
+    serverApiAvailable = false;
     return null;
   }
 };
 
 export const pushToCentralDatabase = async (snapshot?: any): Promise<boolean> => {
+  if (serverApiAvailable === false) {
+    return false;
+  }
+
   try {
     const data = snapshot || createDatabaseSnapshot();
     const res = await fetch('/api/database', {
@@ -937,18 +993,49 @@ export const pushToCentralDatabase = async (snapshot?: any): Promise<boolean> =>
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
+    if (res.status === 404) {
+      serverApiAvailable = false;
+      return false;
+    }
+    serverApiAvailable = res.ok;
     return res.ok;
-  } catch (err) {
+  } catch {
+    serverApiAvailable = false;
     return false;
   }
 };
 
 export const getCentralDatabaseStatus = async (): Promise<any | null> => {
+  if (serverApiAvailable === false) {
+    return {
+      success: true,
+      initialized: true,
+      mode: 'cloud_drive_standalone',
+      message: 'Running with Direct Google Drive & Local Storage Sync',
+    };
+  }
+
   try {
     const res = await fetch('/api/database/status');
+    if (res.status === 404) {
+      serverApiAvailable = false;
+      return {
+        success: true,
+        initialized: true,
+        mode: 'cloud_drive_standalone',
+        message: 'Running with Direct Google Drive & Local Storage Sync',
+      };
+    }
     if (!res.ok) return null;
+    serverApiAvailable = true;
     return await res.json();
   } catch {
-    return null;
+    serverApiAvailable = false;
+    return {
+      success: true,
+      initialized: true,
+      mode: 'cloud_drive_standalone',
+      message: 'Running with Direct Google Drive & Local Storage Sync',
+    };
   }
 };

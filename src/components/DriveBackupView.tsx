@@ -6,12 +6,24 @@ import {
   getGoogleAccessToken,
   setGoogleAccessToken,
   disconnectGoogleDrive,
+  getGoogleDriveUser,
 } from '../services/auth';
 import {
+  DEFAULT_DESIGNATED_FILE_ID,
+  DEFAULT_DESIGNATED_FILE_URL,
+  getDesignatedDriveFileId,
+  setDesignatedDriveFileId,
+  isDriveAutoSyncEnabled,
+  setDriveAutoSyncEnabled,
+  saveToDesignatedDriveFile,
+  fetchFromDesignatedDriveFile,
   listDriveBackups,
   uploadBackupToDrive,
   downloadDriveBackup,
   deleteDriveBackup,
+  onDriveSyncStatusChange,
+  DriveSyncStatus,
+  getDriveSyncStatus,
 } from '../services/googleDrive';
 import {
   createDatabaseSnapshot,
@@ -35,8 +47,8 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
 }) => {
   const t = translations[lang];
 
-  const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [googleUserEmail, setGoogleUserEmail] = useState<string>('');
+  const [isConnected, setIsConnected] = useState<boolean>(() => !!getGoogleAccessToken());
+  const [googleUserEmail, setGoogleUserEmail] = useState<string>(() => getGoogleDriveUser()?.email || '');
   const [driveBackups, setDriveBackups] = useState<DriveBackupItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -46,6 +58,13 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
   const [manualTokenInput, setManualTokenInput] = useState<string>('');
   const [serverDbStatus, setServerDbStatus] = useState<any>(null);
 
+  // Designated Drive Master File State
+  const [designatedFileId, setDesignatedFileIdState] = useState<string>(() => getDesignatedDriveFileId());
+  const [isAutoSync, setIsAutoSync] = useState<boolean>(() => isDriveAutoSyncEnabled());
+  const [isEditingFileId, setIsEditingFileId] = useState<boolean>(false);
+  const [fileIdInput, setFileIdInput] = useState<string>(() => getDesignatedDriveFileId());
+  const [driveSyncState, setDriveSyncState] = useState<DriveSyncStatus>(() => getDriveSyncStatus());
+
   // Confirmation dialog state for destructive/mutating operations
   const [confirmModalItem, setConfirmModalItem] = useState<DriveBackupItem | null>(null);
 
@@ -53,13 +72,23 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
     const token = getGoogleAccessToken();
     if (token) {
       setIsConnected(true);
+      const user = getGoogleDriveUser();
+      if (user?.email) setGoogleUserEmail(user.email);
       fetchBackups();
     }
+
+    // Subscribe to drive sync status
+    const unsubscribe = onDriveSyncStatusChange((st) => {
+      setDriveSyncState(st);
+      if (st.fileId) setDesignatedFileIdState(st.fileId);
+    });
 
     // Check central server status
     getCentralDatabaseStatus().then((status) => {
       if (status) setServerDbStatus(status);
     });
+
+    return unsubscribe;
   }, []);
 
   const handleForceSyncServer = async () => {
@@ -213,6 +242,58 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
     }
   };
 
+  // Designated Drive File Handlers
+  const handleSaveToDesignatedFile = async () => {
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      const snapshot = createDatabaseSnapshot();
+      const res = await saveToDesignatedDriveFile(snapshot, designatedFileId);
+      setStatusMessage(lang === 'ta' ? `குறிக்கப்பட்ட டிரைவ் கோப்பில் (${res.fileId}) அனைத்து தகவல்களும் வெற்றிகரமாக சேமிக்கப்பட்டன!` : `Successfully saved to designated Drive file (${res.fileId})!`);
+      onAuditLog('DRIVE_MASTER_SYNC', `Saved master database directly to Google Drive file: ${res.fileId}`);
+      await fetchBackups();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to save to designated Google Drive file');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePullFromDesignatedFile = async () => {
+    if (!window.confirm(lang === 'ta' ? 'குறிக்கப்பட்ட கூகிள் டிரைவ் கோப்பிலிருந்து தரவுகளைப் பெற்று தற்போதைய தகவல்களைப் புதுப்பிக்க விரும்புகிறீர்களா?' : 'Pull latest data from the designated Google Drive file and update local state?')) {
+      return;
+    }
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      const driveData = await fetchFromDesignatedDriveFile(designatedFileId);
+      if (!driveData || !driveData.beneficiaries) {
+        throw new Error(lang === 'ta' ? 'டிரைவ் கோப்பில் சரியான தரவுத்தள ஆவணம் காணப்படவில்லை.' : 'Designated Drive file does not contain a valid database snapshot.');
+      }
+      restoreDatabaseFromSnapshot(driveData);
+      onDatabaseReload();
+      setStatusMessage(lang === 'ta' ? `டிரைவ் கோப்பிலிருந்து ${driveData.beneficiaries?.length || 0} பிரஜைகள் மற்றும் தகவல்கள் வெற்றிகரமாகப் பெறப்பட்டன!` : `Loaded ${driveData.beneficiaries?.length || 0} citizens from designated Drive file!`);
+      onAuditLog('DRIVE_MASTER_PULL', `Pulled master database from Google Drive file: ${designatedFileId}`);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to pull from designated Google Drive file');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateDesignatedFileId = () => {
+    if (!fileIdInput.trim()) return;
+    const cleanId = setDesignatedDriveFileId(fileIdInput.trim());
+    setDesignatedFileIdState(cleanId);
+    setIsEditingFileId(false);
+    setStatusMessage(lang === 'ta' ? `முதன்மை டிரைவ் கோப்பு அடையாள எண் மாற்றப்பட்டது: ${cleanId}` : `Designated Drive File ID updated: ${cleanId}`);
+  };
+
+  const handleToggleAutoSync = (enabled: boolean) => {
+    setIsAutoSync(enabled);
+    setDriveAutoSyncEnabled(enabled);
+  };
+
   // Local JSON File export
   const handleDownloadLocalBackup = () => {
     const snapshot = createDatabaseSnapshot();
@@ -300,6 +381,177 @@ export const DriveBackupView: React.FC<DriveBackupViewProps> = ({
             </button>
           )}
         </div>
+      </div>
+
+      {/* Designated Master Google Drive Database Synchronization Card */}
+      <div className="bg-white border-2 border-emerald-500/80 rounded-2xl p-5 sm:p-6 shadow-md relative overflow-hidden">
+        <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[10px] font-bold tracking-wider uppercase px-4 py-1 rounded-bl-xl shadow-xs">
+          {lang === 'ta' ? 'முதன்மை நேரடி தரவுத்தள கோப்பு' : 'DESIGNATED MASTER FILE'}
+        </div>
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-2xl">🎯</span>
+              <h3 className="text-base font-bold text-slate-900 tracking-tight">
+                {lang === 'ta' ? 'குறிக்கப்பட்ட கூகிள் டிரைவ் நேரடி தரவுத்தள இணைப்பு' : 'Designated Master Google Drive Database Sync'}
+              </h3>
+              <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold font-mono ${isConnected ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-900 border border-amber-300'}`}>
+                {isConnected ? (lang === 'ta' ? 'இணைக்கப்பட்டுள்ளது' : 'CONNECTED') : (lang === 'ta' ? 'இணைப்பு தேவை' : 'CONNECT REQUIRED')}
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed max-w-3xl">
+              {lang === 'ta'
+                ? 'பிரதேச செயலகத்தில் எந்தவொரு கணினியிலோ அல்லது வுரவுசரிலோ (Chrome, Edge, Firefox) தகவல் பதியப்பட்டாலும், அது உடனடியாக கீழே உள்ள இந்த பிரதான கூகிள் டிரைவ் கோப்பில் சேமிக்கப்படும். இதனால் அனைத்து வுரவுசர்களிலும் தகவல்கள் ஒரே சீராகப் பகிரப்படும்.'
+                : 'Every record added or updated from any computer or browser automatically saves directly into this designated master Google Drive file for synchronized cross-browser access.'}
+            </p>
+          </div>
+
+          {/* Auto-Sync Toggle */}
+          <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl w-fit">
+            <div className="text-right">
+              <div className="text-[11px] font-bold text-slate-800">
+                {lang === 'ta' ? 'தானியங்கி டிரைவ் சேமிப்பு' : 'Auto-Save to Drive'}
+              </div>
+              <div className="text-[10px] text-slate-500">
+                {isAutoSync ? (lang === 'ta' ? 'ஒவ்வொரு மாற்றத்திலும்' : 'On Every Change') : (lang === 'ta' ? 'கைமுறை மட்டும்' : 'Manual Only')}
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isAutoSync}
+              onClick={() => handleToggleAutoSync(!isAutoSync)}
+              className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors ${
+                isAutoSync ? 'bg-emerald-600' : 'bg-slate-300'
+              }`}
+            >
+              <div
+                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                  isAutoSync ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* File ID & Link Info */}
+        <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                <span>📁</span>
+                <span>{lang === 'ta' ? 'இணைக்கப்பட்ட டிரைவ் கோப்பு அடையாள எண் (File ID):' : 'Designated Drive File ID:'}</span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <code className="px-2.5 py-1 bg-white border border-slate-300 rounded font-mono text-xs font-bold text-emerald-900 select-all">
+                  {designatedFileId}
+                </code>
+                <a
+                  href={`https://drive.google.com/file/d/${designatedFileId}/view`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[11px] font-semibold transition-colors"
+                >
+                  <span>🌐</span>
+                  <span>{lang === 'ta' ? 'டிரைவில் திறக்கவும் (Open in Drive)' : 'Open in Google Drive'}</span>
+                </a>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setIsEditingFileId(!isEditingFileId)}
+                className="px-2.5 py-1.5 text-[11px] text-slate-700 hover:bg-slate-200 rounded-lg font-medium transition-colors border border-slate-300"
+              >
+                ✏️ {isEditingFileId ? (lang === 'ta' ? 'மூடுக' : 'Close') : (lang === 'ta' ? 'கோப்பு இணைப்பை மாற்று' : 'Change File ID / Link')}
+              </button>
+            </div>
+          </div>
+
+          {/* Edit file ID form */}
+          {isEditingFileId && (
+            <div className="mt-3 pt-3 border-t border-slate-200 space-y-2">
+              <label className="text-[11px] font-bold text-slate-700 block">
+                {lang === 'ta' ? 'புதிய கூகிள் டிரைவ் பகிர்வு இணைப்பு (Share Link) அல்லது File ID-ஐ இடவும்:' : 'Paste new Google Drive share link or File ID:'}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={fileIdInput}
+                  onChange={(e) => setFileIdInput(e.target.value)}
+                  placeholder="https://drive.google.com/file/d/1oEDEnf1xa-7FQm89Wz9hgVBGWiF5Ylr2/view?usp=sharing"
+                  className="flex-1 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-hidden"
+                />
+                <button
+                  type="button"
+                  onClick={handleUpdateDesignatedFileId}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-xs"
+                >
+                  {lang === 'ta' ? 'சேமி' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFileIdInput(DEFAULT_DESIGNATED_FILE_ID);
+                    setDesignatedDriveFileId(DEFAULT_DESIGNATED_FILE_ID);
+                    setDesignatedFileIdState(DEFAULT_DESIGNATED_FILE_ID);
+                    setIsEditingFileId(false);
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-medium transition-colors"
+                  title="Reset to default official file"
+                >
+                  {lang === 'ta' ? 'இயல்புநிலை' : 'Reset Default'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 2 Primary Direct Action Buttons */}
+        <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <button
+            type="button"
+            onClick={handleSaveToDesignatedFile}
+            disabled={isLoading || !isConnected}
+            className="flex-1 py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
+          >
+            <span className="text-base">📤</span>
+            <span>
+              {lang === 'ta'
+                ? 'இந்த டிரைவ் கோப்பில் தகவல்களை இப்போதே சேமிக்கவும் (Push to Drive File)'
+                : 'Save Local Data into this Drive File Now'}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePullFromDesignatedFile}
+            disabled={isLoading}
+            className="flex-1 py-2.5 px-4 bg-indigo-700 hover:bg-indigo-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
+          >
+            <span className="text-base">📥</span>
+            <span>
+              {lang === 'ta'
+                ? 'இந்த டிரைவ் கோப்பிலிருந்து தகவல்களை மீட்டெடுக்கவும் (Pull from Drive File)'
+                : 'Load / Pull Latest from this Drive File'}
+            </span>
+          </button>
+        </div>
+
+        {driveSyncState.lastSyncedAt && (
+          <div className="mt-3 text-[11px] text-slate-500 font-mono text-center sm:text-left flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+            <span>
+              {lang === 'ta' ? 'கடைசி நேரடி ஒத்திசைவு:' : 'Last live sync:'} {new Date(driveSyncState.lastSyncedAt).toLocaleString()}
+            </span>
+            {driveSyncState.message && (
+              <span className="text-emerald-700 font-sans">· {driveSyncState.message}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Clear Guidance Card: Where data is stored & how to switch accounts */}

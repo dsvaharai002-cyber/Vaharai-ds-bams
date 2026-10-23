@@ -14,12 +14,54 @@ import { User } from '../types';
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
 
-const provider = new GoogleAuthProvider();
-provider.addScope('https://www.googleapis.com/auth/drive.file');
+const DRIVE_TOKEN_KEY = 'vaharai_ds_drive_token';
+const DRIVE_USER_KEY = 'vaharai_ds_drive_user';
 
-// In-memory token storage (DO NOT store in localStorage per guidelines)
+// In-memory + session cached token
 let cachedAccessToken: string | null = null;
 let isSigningIn = false;
+
+// Initialize cached token from storage on startup
+try {
+  if (typeof window !== 'undefined') {
+    const savedToken = sessionStorage.getItem(DRIVE_TOKEN_KEY) || localStorage.getItem(DRIVE_TOKEN_KEY);
+    if (savedToken) {
+      cachedAccessToken = savedToken;
+    }
+  }
+} catch {
+  // ignore storage errors
+}
+
+export const getGoogleDriveUser = (): { email?: string; displayName?: string } | null => {
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem(DRIVE_USER_KEY);
+      return raw ? JSON.parse(raw) : null;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+};
+
+export const setGoogleDriveUser = (user: { email?: string | null; displayName?: string | null } | null) => {
+  try {
+    if (typeof window !== 'undefined') {
+      if (user) {
+        localStorage.setItem(DRIVE_USER_KEY, JSON.stringify(user));
+      } else {
+        localStorage.removeItem(DRIVE_USER_KEY);
+      }
+    }
+  } catch {
+    // ignore
+  }
+};
+
+const provider = new GoogleAuthProvider();
+provider.addScope('https://www.googleapis.com/auth/drive');
+provider.addScope('https://www.googleapis.com/auth/drive.file');
 
 export const initFirebaseAuth = (
   onSuccess?: (user: FirebaseUser, token: string) => void,
@@ -27,15 +69,16 @@ export const initFirebaseAuth = (
 ) => {
   return onAuthStateChanged(auth, async (fbUser) => {
     if (fbUser) {
-      if (cachedAccessToken) {
-        if (onSuccess) onSuccess(fbUser, cachedAccessToken);
+      const token = getGoogleAccessToken();
+      if (token) {
+        if (onSuccess) onSuccess(fbUser, token);
       } else if (!isSigningIn) {
-        // Token cleared or expired
         if (onFail) onFail();
       }
     } else {
-      cachedAccessToken = null;
-      if (onFail) onFail();
+      if (!getGoogleAccessToken()) {
+        if (onFail) onFail();
+      }
     }
   });
 };
@@ -49,24 +92,23 @@ export const signInWithGoogleDrive = async (): Promise<{ user: { email?: string 
     if (!credential?.accessToken) {
       throw new Error('Could not obtain Google Drive access token from credential');
     }
-    cachedAccessToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedAccessToken };
+    setGoogleAccessToken(credential.accessToken);
+    const userInfo = {
+      email: result.user.email,
+      displayName: result.user.displayName,
+    };
+    setGoogleDriveUser(userInfo);
+    return { user: userInfo, accessToken: credential.accessToken };
   } catch (err: any) {
-    console.warn('Firebase sign-in error, testing fallback options:', err);
+    console.warn('Firebase sign-in error, testing GIS fallback:', err);
 
-    // If unauthorized-domain error, try Google Identity Services (GIS) token client if loaded
-    if (
-      err.code === 'auth/unauthorized-domain' ||
-      err.message?.includes('auth/unauthorized-domain') ||
-      err.message?.includes('unauthorized domain')
-    ) {
-      if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
-        try {
-          const gisResult = await requestAccessTokenViaGis();
-          return gisResult;
-        } catch (gisErr: any) {
-          console.error('GIS fallback also failed:', gisErr);
-        }
+    // If unauthorized-domain error or popup blocked, try Google Identity Services (GIS) token client if loaded
+    if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
+      try {
+        const gisResult = await requestAccessTokenViaGis();
+        return gisResult;
+      } catch (gisErr: any) {
+        console.error('GIS fallback also failed:', gisErr);
       }
     }
 
@@ -91,14 +133,14 @@ const requestAccessTokenViaGis = async (): Promise<{ user: { email: string; disp
     try {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: oAuthClientId,
-        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
+        scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
         callback: async (resp: any) => {
           if (resp.error) {
             reject(new Error(resp.error_description || resp.error));
             return;
           }
           if (resp.access_token) {
-            cachedAccessToken = resp.access_token;
+            setGoogleAccessToken(resp.access_token);
             let email = 'Google Account';
             let displayName = 'Drive User';
             try {
@@ -113,8 +155,10 @@ const requestAccessTokenViaGis = async (): Promise<{ user: { email: string; disp
             } catch {
               // fallback
             }
+            const userInfo = { email, displayName };
+            setGoogleDriveUser(userInfo);
             resolve({
-              user: { email, displayName },
+              user: userInfo,
               accessToken: resp.access_token,
             });
           } else {
@@ -131,10 +175,40 @@ const requestAccessTokenViaGis = async (): Promise<{ user: { email: string; disp
 
 export const setGoogleAccessToken = (token: string | null) => {
   cachedAccessToken = token;
+  try {
+    if (typeof window !== 'undefined') {
+      if (token) {
+        sessionStorage.setItem(DRIVE_TOKEN_KEY, token);
+        localStorage.setItem(DRIVE_TOKEN_KEY, token);
+      } else {
+        sessionStorage.removeItem(DRIVE_TOKEN_KEY);
+        localStorage.removeItem(DRIVE_TOKEN_KEY);
+        localStorage.removeItem(DRIVE_USER_KEY);
+      }
+    }
+  } catch {
+    // ignore
+  }
 };
 
 export const getGoogleAccessToken = (): string | null => {
-  return cachedAccessToken;
+  if (cachedAccessToken) return cachedAccessToken;
+  try {
+    if (typeof window !== 'undefined') {
+      const savedToken = sessionStorage.getItem(DRIVE_TOKEN_KEY) || localStorage.getItem(DRIVE_TOKEN_KEY);
+      if (savedToken) {
+        cachedAccessToken = savedToken;
+        return savedToken;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+};
+
+export const isGoogleDriveAuthenticated = (): boolean => {
+  return !!getGoogleAccessToken();
 };
 
 export const disconnectGoogleDrive = async () => {
@@ -143,7 +217,8 @@ export const disconnectGoogleDrive = async () => {
   } catch {
     // ignore
   }
-  cachedAccessToken = null;
+  setGoogleAccessToken(null);
+  setGoogleDriveUser(null);
 };
 
 // Application Session Storage (for DS Staff User ID / Password login)

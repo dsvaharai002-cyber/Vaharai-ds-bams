@@ -16,8 +16,24 @@ import {
   fetchCentralDatabase,
   pushToCentralDatabase,
   restoreDatabaseFromSnapshot,
+  isServerApiAvailable,
+  createDatabaseSnapshot,
 } from './services/storage';
-import { getActiveUserSession, setActiveUserSession } from './services/auth';
+import {
+  getActiveUserSession,
+  setActiveUserSession,
+  signInWithGoogleDrive,
+  getGoogleDriveUser,
+  isGoogleDriveAuthenticated,
+} from './services/auth';
+import {
+  fetchFromDesignatedDriveFile,
+  saveToDesignatedDriveFile,
+  getDesignatedDriveFileId,
+  onDriveSyncStatusChange,
+  DriveSyncStatus,
+  getDriveSyncStatus,
+} from './services/googleDrive';
 import { Header } from './components/Header';
 import { LoginView } from './components/LoginView';
 import { DashboardView } from './components/DashboardView';
@@ -46,6 +62,13 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<SystemAuditLog[]>(() => loadAuditLogs());
   const [assistanceRecords, setAssistanceRecords] = useState<AssistanceRecord[]>(() => loadAssistanceRecords());
 
+  // Cloud & Drive Sync Status State
+  const [driveSyncStatus, setDriveSyncStatus] = useState<DriveSyncStatus>(() => getDriveSyncStatus());
+  const [isDriveConnected, setIsDriveConnected] = useState<boolean>(() => isGoogleDriveAuthenticated());
+  const [driveUser, setDriveUser] = useState(() => getGoogleDriveUser());
+  const [isManualSyncing, setIsManualSyncing] = useState<boolean>(false);
+  const [syncToastMessage, setSyncToastMessage] = useState<string>('');
+
   // Quick Barcode Scanner Modal
   const [showScanner, setShowScanner] = useState<boolean>(false);
 
@@ -65,23 +88,80 @@ export default function App() {
     }
   }, []);
 
-  // Central Server Real-Time Synchronization across multiple office computers
+  // Listen for Google Drive sync status updates
+  useEffect(() => {
+    const unsubscribe = onDriveSyncStatusChange((st) => {
+      setDriveSyncStatus(st);
+      setIsDriveConnected(isGoogleDriveAuthenticated());
+      setDriveUser(getGoogleDriveUser());
+    });
+    return unsubscribe;
+  }, []);
+
+  // Real-Time Cross-Tab / Cross-Window Synchronization on the same machine
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let channel: BroadcastChannel | null = null;
+    if ('BroadcastChannel' in window) {
+      channel = new BroadcastChannel('vaharai_ds_sync_channel');
+      channel.onmessage = () => {
+        handleDatabaseReload();
+      };
+    }
+
+    const handleLocalUpdate = () => {
+      handleDatabaseReload();
+    };
+    window.addEventListener('vaharai_db_updated', handleLocalUpdate);
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key && e.key.startsWith('vaharai_ds_')) {
+        handleDatabaseReload();
+      }
+    };
+    window.addEventListener('storage', handleStorageEvent);
+
+    return () => {
+      if (channel) channel.close();
+      window.removeEventListener('vaharai_db_updated', handleLocalUpdate);
+      window.removeEventListener('storage', handleStorageEvent);
+    };
+  }, []);
+
+  // Central Google Drive Master File & Server Synchronization across multiple office computers
   useEffect(() => {
     let isMounted = true;
+
+    // Boot: Attempt to load from the designated Google Drive file first
+    const pullFromDesignatedDrive = async () => {
+      if (isGoogleDriveAuthenticated()) {
+        try {
+          const driveData = await fetchFromDesignatedDriveFile();
+          if (driveData && isMounted && Array.isArray(driveData.beneficiaries)) {
+            restoreDatabaseFromSnapshot(driveData);
+            handleDatabaseReload();
+            console.log('[Google Drive] Boot: Master database loaded from designated file.');
+          }
+        } catch (e) {
+          console.warn('[Google Drive] Boot fetch warning:', e);
+        }
+      }
+    };
+
     const syncInit = async () => {
+      await pullFromDesignatedDrive();
+
+      // Check server API only if available
       try {
-        const central = await fetchCentralDatabase();
-        if (central && isMounted) {
-          restoreDatabaseFromSnapshot(central);
-          setUsers(loadUsers());
-          setBeneficiaries(loadBeneficiaries());
-          setTokens(loadTokens());
-          setDivisions(loadDivisions());
-          setAuditLogs(loadAuditLogs());
-          setAssistanceRecords(loadAssistanceRecords());
-        } else {
-          // Push initial client seed to central server on first boot
-          await pushToCentralDatabase();
+        if (isServerApiAvailable()) {
+          const central = await fetchCentralDatabase();
+          if (central && isMounted) {
+            restoreDatabaseFromSnapshot(central);
+            handleDatabaseReload();
+          } else if (isServerApiAvailable()) {
+            await pushToCentralDatabase();
+          }
         }
       } catch (err) {
         console.warn('Initial central sync failed:', err);
@@ -90,20 +170,41 @@ export default function App() {
 
     syncInit();
 
-    // Polling every 10 seconds so Counter 1, Counter 2, and Live TV Display are always in sync
+    // Polling interval:
+    // 1. If Google Drive is authenticated, check designated file every 25 seconds for remote changes
+    // 2. If Server API is available, poll server
     const syncInterval = setInterval(async () => {
-      try {
-        const central = await fetchCentralDatabase();
-        if (central && isMounted) {
-          if (Array.isArray(central.tokens)) setTokens(central.tokens);
-          if (Array.isArray(central.beneficiaries)) setBeneficiaries(central.beneficiaries);
-          if (Array.isArray(central.assistance)) setAssistanceRecords(central.assistance);
-          if (Array.isArray(central.auditLogs)) setAuditLogs(central.auditLogs);
+      if (!isMounted) return;
+
+      if (isGoogleDriveAuthenticated()) {
+        try {
+          const driveData = await fetchFromDesignatedDriveFile();
+          if (driveData && isMounted && Array.isArray(driveData.beneficiaries)) {
+            const currentCount = loadBeneficiaries().length;
+            if (driveData.beneficiaries.length !== currentCount) {
+              restoreDatabaseFromSnapshot(driveData);
+              handleDatabaseReload();
+            }
+          }
+        } catch {
+          // silent offline fallback
         }
-      } catch {
-        // offline fallback
       }
-    }, 10000);
+
+      if (isServerApiAvailable()) {
+        try {
+          const central = await fetchCentralDatabase();
+          if (central && isMounted) {
+            if (Array.isArray(central.tokens)) setTokens(central.tokens);
+            if (Array.isArray(central.beneficiaries)) setBeneficiaries(central.beneficiaries);
+            if (Array.isArray(central.assistance)) setAssistanceRecords(central.assistance);
+            if (Array.isArray(central.auditLogs)) setAuditLogs(central.auditLogs);
+          }
+        } catch {
+          // offline fallback
+        }
+      }
+    }, 25000);
 
     return () => {
       isMounted = false;
@@ -177,6 +278,61 @@ export default function App() {
     setAssistanceRecords(loadAssistanceRecords());
   };
 
+  const handleQuickSyncNow = async () => {
+    setIsManualSyncing(true);
+    setSyncToastMessage('');
+    try {
+      if (isGoogleDriveAuthenticated()) {
+        const driveData = await fetchFromDesignatedDriveFile();
+        if (driveData && driveData.beneficiaries) {
+          restoreDatabaseFromSnapshot(driveData);
+          handleDatabaseReload();
+          setSyncToastMessage(lang === 'ta' ? 'டிரைவ் கோப்பிலிருந்து தரவுகள் பெறப்பட்டன!' : 'Pulled latest from Drive file!');
+        } else {
+          const snapshot = createDatabaseSnapshot();
+          await saveToDesignatedDriveFile(snapshot);
+          setSyncToastMessage(lang === 'ta' ? 'டிரைவ் கோப்பில் சேமிக்கப்பட்டது!' : 'Saved to Drive file!');
+        }
+      } else if (isServerApiAvailable()) {
+        const central = await fetchCentralDatabase();
+        if (central) {
+          restoreDatabaseFromSnapshot(central);
+          handleDatabaseReload();
+          setSyncToastMessage(lang === 'ta' ? 'சர்வர் தரவுகள் புதுப்பிக்கப்பட்டன!' : 'Server data refreshed!');
+        }
+      } else {
+        setSyncToastMessage(lang === 'ta' ? 'டிரைவை இணைக்க வலதுபுறம் உள்ள பொத்தானை அழுத்தவும்' : 'Connect Google Drive to sync across browsers');
+      }
+    } catch (err: any) {
+      setSyncToastMessage(err.message || 'Sync failed');
+    } finally {
+      setIsManualSyncing(false);
+      setTimeout(() => setSyncToastMessage(''), 4000);
+    }
+  };
+
+  const handleConnectDriveDirect = async () => {
+    try {
+      setIsManualSyncing(true);
+      await signInWithGoogleDrive();
+      setIsDriveConnected(true);
+      setDriveUser(getGoogleDriveUser());
+      const driveData = await fetchFromDesignatedDriveFile();
+      if (driveData && driveData.beneficiaries) {
+        restoreDatabaseFromSnapshot(driveData);
+        handleDatabaseReload();
+      } else {
+        await saveToDesignatedDriveFile(createDatabaseSnapshot());
+      }
+      setSyncToastMessage(lang === 'ta' ? 'கூகிள் டிரைவ் வெற்றிகரமாக இணைக்கப்பட்டது!' : 'Google Drive connected successfully!');
+    } catch (e: any) {
+      setSyncToastMessage(e.message || 'Drive connect failed');
+    } finally {
+      setIsManualSyncing(false);
+      setTimeout(() => setSyncToastMessage(''), 4000);
+    }
+  };
+
   // If user signed out, show official login screen
   if (!currentUser) {
     return (
@@ -224,6 +380,91 @@ export default function App() {
         onLogout={handleLogout}
         onOpenScanner={() => setShowScanner(true)}
       />
+
+      {/* Cloud & Drive Real-Time Sync Bar */}
+      <div className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2 no-print shadow-xs">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="flex h-2.5 w-2.5 relative">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isDriveConnected ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isDriveConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+            </span>
+
+            <span className="font-bold text-slate-800">
+              {lang === 'ta' ? 'டிரைவ் நேரடி ஒத்திசைவு:' : 'Drive Live Sync:'}
+            </span>
+
+            {isDriveConnected ? (
+              <div className="flex items-center gap-1.5 text-emerald-800 font-medium">
+                <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[11px] font-semibold">
+                  {lang === 'ta' ? 'இணைக்கப்பட்டுள்ளது' : 'Connected'} ({driveUser?.email || 'Google Drive'})
+                </span>
+                <span className="text-slate-400 hidden md:inline">|</span>
+                <span className="text-[11px] text-slate-600 font-mono hidden md:inline">
+                  {lang === 'ta' ? 'கோப்பு:' : 'File:'} {getDesignatedDriveFileId().slice(0, 8)}...
+                </span>
+                {driveSyncStatus.lastSyncedAt && (
+                  <span className="text-[10px] text-slate-500">
+                    ({lang === 'ta' ? 'கடைசி:' : 'Last:'} {new Date(driveSyncStatus.lastSyncedAt).toLocaleTimeString()})
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-amber-800">
+                <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[11px] font-semibold">
+                  {lang === 'ta' ? 'டிரைவ் இணைக்கப்படவில்லை (லோக்கல் ஸ்டோரேஜ் மட்டும்)' : 'Local Storage Only (Drive Disconnected)'}
+                </span>
+                <span className="text-[11px] text-slate-500 hidden sm:inline">
+                  {lang === 'ta'
+                    ? 'பல வுரவுசர்களில் தகவலைப் பார்க்க கூகிள் டிரைவை இணைக்கவும்'
+                    : 'Connect Drive for cross-browser sync'}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {syncToastMessage && (
+              <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded text-[11px] font-semibold animate-fade-in">
+                {syncToastMessage}
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={handleQuickSyncNow}
+              disabled={isManualSyncing}
+              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold transition-colors flex items-center gap-1 border border-slate-300"
+              title="Pull latest data or push local changes"
+            >
+              <span className={isManualSyncing ? 'animate-spin' : ''}>🔄</span>
+              <span>{isManualSyncing ? (lang === 'ta' ? 'ஒத்திசைக்கிறது...' : 'Syncing...') : (lang === 'ta' ? 'இப்போதே ஒத்திசை' : 'Sync Now')}</span>
+            </button>
+
+            {!isDriveConnected ? (
+              <button
+                type="button"
+                onClick={handleConnectDriveDirect}
+                disabled={isManualSyncing}
+                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition-colors flex items-center gap-1 shadow-xs"
+              >
+                <span>☁️</span>
+                <span>{lang === 'ta' ? 'கூகிள் டிரைவை இணைக்க' : 'Connect Google Drive'}</span>
+              </button>
+            ) : (
+              isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setCurrentTab('drive')}
+                  className="px-2 py-1 text-slate-600 hover:text-slate-900 text-[11px] font-medium underline"
+                >
+                  {lang === 'ta' ? 'டிரைவ் கோப்பு அமைப்புகள்' : 'Drive File Settings'}
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Main View Area with strict overflow safety */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 no-print overflow-x-hidden">

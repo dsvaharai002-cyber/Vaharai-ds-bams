@@ -1,5 +1,14 @@
-import React, { useState } from 'react';
-import { Beneficiary, User, GNDivision, AssistanceRecord } from '../types';
+import React, { useState, useMemo } from 'react';
+import {
+  Beneficiary,
+  User,
+  GNDivision,
+  AssistanceRecord,
+  PregnantMotherRecord,
+  ALL_WELFARE_SCHEMES_LIST,
+  WelfareScheme,
+  FamilyRelationship,
+} from '../types';
 import { Language, translations } from '../translations/i18n';
 import {
   downloadCsvFile,
@@ -8,15 +17,28 @@ import {
   generateDivisionsSampleCsv,
   generateAssistanceSampleCsv,
   generateFamiliesSampleCsv,
+  generateElderlySampleCsv,
+  generatePregnantMothersSampleCsv,
+  generateDisabilitySampleCsv,
+  generateAswesumaSampleCsv,
   parseBeneficiariesFromCsv,
   parseUsersFromCsv,
   parseAssistanceFromCsv,
   parseFamiliesFromCsv,
+  parseElderlyFromCsv,
+  parsePregnantMothersFromCsv,
+  parseDisabilityFromCsv,
+  parseAswesumaFromCsv,
   exportBeneficiariesToCsv,
   exportUsersToCsv,
   exportDivisionsToCsv,
   exportAssistanceToCsv,
   exportFamiliesToCsv,
+  exportElderlyToCsv,
+  exportPregnantMothersToCsv,
+  exportDisabilityToCsv,
+  exportAswesumaToCsv,
+  getRelationshipTamilLabel,
 } from '../services/csv';
 import {
   FileSpreadsheet,
@@ -29,62 +51,144 @@ import {
   Gift,
   Building,
   UserCheck,
+  Heart,
+  Baby,
+  Accessibility,
+  Coins,
+  Search,
+  Filter,
+  Eye,
+  Plus,
+  QrCode,
+  Printer,
+  Sparkles,
 } from 'lucide-react';
-import { createDatabaseSnapshot, pushToCentralDatabase } from '../services/storage';
+import { createDatabaseSnapshot, pushToCentralDatabase, calculateAge } from '../services/storage';
 import { saveToDesignatedDriveFile, isDriveAutoSyncEnabled } from '../services/googleDrive';
 import { isGoogleDriveAuthenticated } from '../services/auth';
+import { FamilyGroupModal } from './FamilyGroupModal';
 
 interface CsvManagementViewProps {
   beneficiaries: Beneficiary[];
   users: User[];
   divisions: GNDivision[];
   assistanceRecords?: AssistanceRecord[];
+  pregnantMothers?: PregnantMotherRecord[];
   currentUser: User;
   lang: Language;
   onUpdateBeneficiaries: (items: Beneficiary[]) => void;
   onUpdateUsers: (items: User[]) => void;
   onUpdateAssistanceRecords?: (items: AssistanceRecord[]) => void;
+  onUpdatePregnantMothers?: (items: PregnantMotherRecord[]) => void;
   onAuditLog: (action: string, details: string) => void;
 }
+
+export type ActiveCsvType =
+  | 'families'
+  | 'elderly'
+  | 'pregnant'
+  | 'disability'
+  | 'aswesuma'
+  | 'beneficiaries'
+  | 'assistance'
+  | 'users'
+  | 'divisions';
 
 export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
   beneficiaries,
   users,
   divisions,
   assistanceRecords = [],
+  pregnantMothers = [],
   currentUser,
   lang,
   onUpdateBeneficiaries,
   onUpdateUsers,
   onUpdateAssistanceRecords,
+  onUpdatePregnantMothers,
   onAuditLog,
 }) => {
   const t = translations[lang];
 
-  type ActiveCsvType = 'assistance' | 'families' | 'beneficiaries' | 'users' | 'divisions';
-  const [activeType, setActiveType] = useState<ActiveCsvType>('assistance');
+  // Primary View Mode: CSV Management vs Connected Family Visualizer
+  const [viewMode, setViewMode] = useState<'csv_io' | 'family_visualizer'>('csv_io');
+  const [activeType, setActiveType] = useState<ActiveCsvType>('families');
 
   // Import State
   const [fileContent, setFileContent] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
   const [parsedPreview, setParsedPreview] = useState<any[]>([]);
+  const [parsedPregnantMothers, setParsedPregnantMothers] = useState<PregnantMotherRecord[]>([]);
   const [parsedDuplicates, setParsedDuplicates] = useState<AssistanceRecord[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [successBanner, setSuccessBanner] = useState<string>('');
 
+  // Family Tree Modal State
+  const [selectedFamilyCodeForModal, setSelectedFamilyCodeForModal] = useState<string | null>(null);
+
+  // Search & Filter for Family Visualizer
+  const [familySearchQuery, setFamilySearchQuery] = useState('');
+  const [familyDivisionFilter, setFamilyDivisionFilter] = useState('ALL');
+
+  // Group all citizens by Family Code for the Connected Family Units Visualizer
+  const familyGroups = useMemo(() => {
+    const map = new Map<string, Beneficiary[]>();
+    for (const b of beneficiaries) {
+      const code = b.familyCode?.trim() || `FAM-${b.divisionCode}-001`;
+      const list = map.get(code) || [];
+      list.push(b);
+      map.set(code, list);
+    }
+
+    let entries = Array.from(map.entries());
+
+    if (familyDivisionFilter !== 'ALL') {
+      entries = entries.filter(([_, members]) => members[0]?.divisionCode === familyDivisionFilter);
+    }
+
+    if (familySearchQuery.trim()) {
+      const q = familySearchQuery.toLowerCase().trim();
+      entries = entries.filter(([code, members]) => {
+        const matchCode = code.toLowerCase().includes(q);
+        const matchMembers = members.some(
+          (m) =>
+            m.nameTa.toLowerCase().includes(q) ||
+            m.nameEn.toLowerCase().includes(q) ||
+            m.nic.toLowerCase().includes(q) ||
+            (m.phone && m.phone.includes(q))
+        );
+        return matchCode || matchMembers;
+      });
+    }
+
+    return entries;
+  }, [beneficiaries, familyDivisionFilter, familySearchQuery]);
+
   const handleDownloadSample = () => {
-    if (activeType === 'assistance') {
-      const csv = generateAssistanceSampleCsv();
-      downloadCsvFile(csv, 'vaharai_ds_assistance_distribution_sample.csv');
-    } else if (activeType === 'families') {
+    if (activeType === 'families') {
       const csv = generateFamiliesSampleCsv();
-      downloadCsvFile(csv, 'vaharai_ds_families_registration_sample.csv');
+      downloadCsvFile(csv, 'vaharai_ds_family_units_sample.csv');
+    } else if (activeType === 'elderly') {
+      const csv = generateElderlySampleCsv();
+      downloadCsvFile(csv, 'vaharai_ds_elderly_registration_sample.csv');
+    } else if (activeType === 'pregnant') {
+      const csv = generatePregnantMothersSampleCsv();
+      downloadCsvFile(csv, 'vaharai_ds_pregnant_mothers_sample.csv');
+    } else if (activeType === 'disability') {
+      const csv = generateDisabilitySampleCsv();
+      downloadCsvFile(csv, 'vaharai_ds_disability_registration_sample.csv');
+    } else if (activeType === 'aswesuma') {
+      const csv = generateAswesumaSampleCsv();
+      downloadCsvFile(csv, 'vaharai_ds_aswesuma_sample.csv');
     } else if (activeType === 'beneficiaries') {
       const csv = generateBeneficiarySampleCsv();
-      downloadCsvFile(csv, 'vaharai_ds_beneficiaries_sample.csv');
+      downloadCsvFile(csv, 'vaharai_ds_all_citizens_sample.csv');
+    } else if (activeType === 'assistance') {
+      const csv = generateAssistanceSampleCsv();
+      downloadCsvFile(csv, 'vaharai_ds_assistance_distribution_sample.csv');
     } else if (activeType === 'users') {
       const csv = generateUsersSampleCsv();
-      downloadCsvFile(csv, 'vaharai_ds_users_sample.csv');
+      downloadCsvFile(csv, 'vaharai_ds_staff_users_sample.csv');
     } else {
       const csv = generateDivisionsSampleCsv();
       downloadCsvFile(csv, 'vaharai_ds_divisions_sample.csv');
@@ -93,18 +197,34 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
 
   const handleExportCurrent = () => {
     const timestamp = new Date().toISOString().slice(0, 10);
-    if (activeType === 'assistance') {
+    if (activeType === 'families') {
+      const csv = exportFamiliesToCsv(beneficiaries);
+      downloadCsvFile(csv, `vaharai_families_master_${timestamp}.csv`);
+      onAuditLog('EXPORT_CSV', `Exported all family units and members to CSV`);
+    } else if (activeType === 'elderly') {
+      const csv = exportElderlyToCsv(beneficiaries);
+      downloadCsvFile(csv, `vaharai_elderly_citizens_${timestamp}.csv`);
+      onAuditLog('EXPORT_CSV', `Exported elderly citizens to CSV`);
+    } else if (activeType === 'pregnant') {
+      const csv = exportPregnantMothersToCsv(pregnantMothers);
+      downloadCsvFile(csv, `vaharai_pregnant_mothers_${timestamp}.csv`);
+      onAuditLog('EXPORT_CSV', `Exported pregnant mothers to CSV`);
+    } else if (activeType === 'disability') {
+      const csv = exportDisabilityToCsv(beneficiaries);
+      downloadCsvFile(csv, `vaharai_disability_records_${timestamp}.csv`);
+      onAuditLog('EXPORT_CSV', `Exported persons with disabilities to CSV`);
+    } else if (activeType === 'aswesuma') {
+      const csv = exportAswesumaToCsv(beneficiaries);
+      downloadCsvFile(csv, `vaharai_aswesuma_beneficiaries_${timestamp}.csv`);
+      onAuditLog('EXPORT_CSV', `Exported Aswesuma beneficiaries to CSV`);
+    } else if (activeType === 'beneficiaries') {
+      const csv = exportBeneficiariesToCsv(beneficiaries);
+      downloadCsvFile(csv, `vaharai_citizens_master_${timestamp}.csv`);
+      onAuditLog('EXPORT_CSV', `Exported ${beneficiaries.length} citizens to CSV`);
+    } else if (activeType === 'assistance') {
       const csv = exportAssistanceToCsv(assistanceRecords);
       downloadCsvFile(csv, `vaharai_assistance_distribution_${timestamp}.csv`);
       onAuditLog('EXPORT_CSV', `Exported ${assistanceRecords.length} assistance distribution records to CSV`);
-    } else if (activeType === 'families') {
-      const csv = exportFamiliesToCsv(beneficiaries);
-      downloadCsvFile(csv, `vaharai_families_master_${timestamp}.csv`);
-      onAuditLog('EXPORT_CSV', `Exported family master records to CSV`);
-    } else if (activeType === 'beneficiaries') {
-      const csv = exportBeneficiariesToCsv(beneficiaries);
-      downloadCsvFile(csv, `vaharai_beneficiaries_${timestamp}.csv`);
-      onAuditLog('EXPORT_CSV', `Exported ${beneficiaries.length} citizen records to CSV`);
     } else if (activeType === 'users') {
       const csv = exportUsersToCsv(users);
       downloadCsvFile(csv, `vaharai_users_${timestamp}.csv`);
@@ -126,17 +246,29 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
       const text = event.target?.result as string;
       setFileContent(text);
 
-      if (activeType === 'assistance') {
-        const { validRecords, duplicateRecords, errors } = parseAssistanceFromCsv(
-          text,
-          assistanceRecords,
-          beneficiaries
-        );
-        setParsedPreview(validRecords);
-        setParsedDuplicates(duplicateRecords);
-        setParseErrors(errors);
-      } else if (activeType === 'families') {
+      if (activeType === 'families') {
         const { items, errors } = parseFamiliesFromCsv(text, beneficiaries);
+        setParsedPreview(items);
+        setParsedDuplicates([]);
+        setParseErrors(errors);
+      } else if (activeType === 'elderly') {
+        const { items, errors } = parseElderlyFromCsv(text, beneficiaries);
+        setParsedPreview(items);
+        setParsedDuplicates([]);
+        setParseErrors(errors);
+      } else if (activeType === 'pregnant') {
+        const { beneficiaries: bItems, pregnantMothers: mItems, errors } = parsePregnantMothersFromCsv(text, beneficiaries);
+        setParsedPreview(bItems);
+        setParsedPregnantMothers(mItems);
+        setParsedDuplicates([]);
+        setParseErrors(errors);
+      } else if (activeType === 'disability') {
+        const { items, errors } = parseDisabilityFromCsv(text, beneficiaries);
+        setParsedPreview(items);
+        setParsedDuplicates([]);
+        setParseErrors(errors);
+      } else if (activeType === 'aswesuma') {
+        const { items, errors } = parseAswesumaFromCsv(text, beneficiaries);
         setParsedPreview(items);
         setParsedDuplicates([]);
         setParseErrors(errors);
@@ -144,6 +276,15 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
         const { items, errors } = parseBeneficiariesFromCsv(text);
         setParsedPreview(items);
         setParsedDuplicates([]);
+        setParseErrors(errors);
+      } else if (activeType === 'assistance') {
+        const { validRecords, duplicateRecords, errors } = parseAssistanceFromCsv(
+          text,
+          assistanceRecords,
+          beneficiaries
+        );
+        setParsedPreview(validRecords);
+        setParsedDuplicates(duplicateRecords);
         setParseErrors(errors);
       } else if (activeType === 'users') {
         const { items, errors } = parseUsersFromCsv(text);
@@ -159,7 +300,6 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
     reader.readAsText(file, 'UTF-8');
   };
 
-  // 1. Commit Import (with duplicate prevention for assistance)
   const handleCommitImport = (includeDuplicates: boolean = false) => {
     if (parsedPreview.length === 0 && (!includeDuplicates || parsedDuplicates.length === 0)) return;
 
@@ -177,10 +317,39 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
       );
       setSuccessBanner(
         lang === 'ta'
-          ? `✅ ${itemsToSave.length} உதவிப் பதிவுகள் வெற்றிகரமாக சேர்க்கப்பட்டன! (${parsedDuplicates.length} இரட்டை உதவிகள் ${includeDuplicates ? 'விதிவிலக்காக அனுமதிக்கப்பட்டன' : 'தடுக்கப்பட்டன'})`
+          ? `✅ ${itemsToSave.length} உதவிப் பதிவுகள் சேர்க்கப்பட்டன! (${parsedDuplicates.length} இரட்டை உதவிகள் ${includeDuplicates ? 'விதிவிலக்காக அனுமதிக்கப்பட்டன' : 'தடுக்கப்பட்டன'})`
           : `✅ ${itemsToSave.length} assistance records saved! (${parsedDuplicates.length} duplicates ${includeDuplicates ? 'force imported' : 'prevented'}).`
       );
-    } else if (activeType === 'families' || activeType === 'beneficiaries') {
+    } else if (activeType === 'pregnant') {
+      // Update both Beneficiaries and PregnantMothers in sync
+      const newCitizens = parsedPreview as Beneficiary[];
+      const existingMap = new Map(beneficiaries.map((b) => [b.nic, b]));
+      for (const item of newCitizens) {
+        existingMap.set(item.nic, item);
+      }
+      onUpdateBeneficiaries(Array.from(existingMap.values()));
+
+      if (onUpdatePregnantMothers && parsedPregnantMothers.length > 0) {
+        const motherMap = new Map(pregnantMothers.map((m) => [m.nic, m]));
+        for (const item of parsedPregnantMothers) {
+          motherMap.set(item.nic, item);
+        }
+        onUpdatePregnantMothers(Array.from(motherMap.values()));
+      }
+
+      onAuditLog('IMPORT_CSV', `Imported ${newCitizens.length} pregnant mother records`);
+      setSuccessBanner(
+        lang === 'ta'
+          ? `✅ ${newCitizens.length} கர்ப்பிணித் தாய்மார் விபரங்கள் குடும்பக் குறியீட்டுடன் சேர்க்கப்பட்டன!`
+          : `✅ ${newCitizens.length} pregnant mother records imported and linked to families!`
+      );
+    } else if (
+      activeType === 'families' ||
+      activeType === 'elderly' ||
+      activeType === 'disability' ||
+      activeType === 'aswesuma' ||
+      activeType === 'beneficiaries'
+    ) {
       const newItems = parsedPreview as Beneficiary[];
       const existingMap = new Map(beneficiaries.map((b) => [b.nic, b]));
       for (const item of newItems) {
@@ -188,17 +357,23 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
       }
       const merged = Array.from(existingMap.values());
       onUpdateBeneficiaries(merged);
-      onAuditLog('IMPORT_CSV', `Imported ${newItems.length} records via CSV`);
+
+      const typeLabel =
+        activeType === 'families'
+          ? lang === 'ta' ? 'குடும்பங்கள் (உறவுகளுடன்)' : 'family members'
+          : activeType === 'elderly'
+          ? lang === 'ta' ? 'முதியோர்' : 'senior citizens'
+          : activeType === 'disability'
+          ? lang === 'ta' ? 'மாற்றுத்திறனாளிகள்' : 'persons with disabilities'
+          : activeType === 'aswesuma'
+          ? lang === 'ta' ? 'அஸ்வெசும பயனாளிகள்' : 'Aswesuma beneficiaries'
+          : lang === 'ta' ? 'பிரஜைகள்' : 'citizens';
+
+      onAuditLog('IMPORT_CSV', `Imported ${newItems.length} ${activeType} records via CSV`);
       setSuccessBanner(
-        `${newItems.length} ${
-          activeType === 'families'
-            ? lang === 'ta'
-              ? 'குடும்பங்கள் தனித்துவமான QR குறியீட்டுடன் சேர்க்கப்பட்டன!'
-              : 'families registered with unique QR codes!'
-            : lang === 'ta'
-            ? 'பயனாளிகள் சேர்க்கப்பட்டனர்!'
-            : 'beneficiaries imported successfully!'
-        }`
+        lang === 'ta'
+          ? `✅ ${newItems.length} ${typeLabel} வெற்றிகரமாக குடும்ப அலகு மற்றும் நலன்புரி உதவிகளுடன் சேர்க்கப்பட்டனர்!`
+          : `✅ ${newItems.length} ${typeLabel} imported successfully with family linkages!`
       );
     } else if (activeType === 'users') {
       const newUsers = parsedPreview as User[];
@@ -209,16 +384,19 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
       const merged = Array.from(existingMap.values());
       onUpdateUsers(merged);
       onAuditLog('IMPORT_CSV', `Imported ${newUsers.length} staff users via CSV`);
-      setSuccessBanner(`${newUsers.length} ${lang === 'ta' ? 'அலுவலர் கணக்குகள் சேர்க்கப்பட்டன!' : 'users imported successfully!'}`);
+      setSuccessBanner(
+        `${newUsers.length} ${lang === 'ta' ? 'அலுவலர் கணக்குகள் சேர்க்கப்பட்டன!' : 'users imported successfully!'}`
+      );
     }
 
     setParsedPreview([]);
     setParsedDuplicates([]);
+    setParsedPregnantMothers([]);
     setFileContent('');
     setFileName('');
-    setTimeout(() => setSuccessBanner(''), 5000);
+    setTimeout(() => setSuccessBanner(''), 6000);
 
-    // Immediately push to central server and Google Drive so background polling never overwrites this CSV!
+    // Instant cloud synchronization push
     setTimeout(async () => {
       try {
         const snapshot = createDatabaseSnapshot();
@@ -232,375 +410,518 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
     }, 50);
   };
 
+  const getWelfareBadge = (code: WelfareScheme) => {
+    const found = ALL_WELFARE_SCHEMES_LIST.find((s) => s.code === code);
+    if (!found) return null;
+    return (
+      <span
+        key={code}
+        className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${found.badgeClass}`}
+      >
+        {lang === 'ta' ? found.labelTa.split('(')[0] : found.labelEn}
+      </span>
+    );
+  };
+
   return (
     <div className="space-y-6 w-full max-w-full overflow-x-hidden">
-      {/* Top Banner */}
+      {/* Top Main Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2">
             <span className="p-2 bg-emerald-100 text-emerald-800 rounded-xl text-xl shadow-xs">📊</span>
             <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-              {lang === 'ta' ? 'சிஎஸ்வி (CSV) மாதிரிகள் & தரவு மேலாண்மை' : 'CSV Templates & Data Import/Export'}
+              {lang === 'ta' ? 'சிஎஸ்வி மாதிரிகள் & குடும்பங்கள் தரவுத்தளம்' : 'CSV Models & Family Unified Database'}
             </h2>
           </div>
           <p className="text-xs text-slate-500 mt-1">
             {lang === 'ta'
-              ? 'உதவி வழங்கல், புதிய குடும்பப் பதிவுகள், மற்றும் பிரஜை விபரங்களை மாதிரி CSV மூலம் பதிவேற்றி, இரட்டை உதவிகளைத் தடுத்தல்.'
-              : 'Bulk import and export assistance distributions with duplicate aid prevention, family registrations, and citizen records.'}
+              ? 'முதியோர், கர்ப்பிணி, அங்கவீனர், அஸ்வெசும என அனைத்தையும் தனித்தனி மாதிரிகளாக பதிவிறக்கி, தாய், தந்தை, மகன், மகள் என குடும்பமாக இணைக்கும் வசதி.'
+              : 'Download individual CSV models for Elderly, Maternity, Disability, Aswesuma, and link them under universal Family QR codes.'}
           </p>
         </div>
 
+        {/* Top Action Toggle & Export Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={handleDownloadSample}
-            className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-900 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-rose-200 shadow-xs"
-          >
-            <Download className="w-3.5 h-3.5 text-rose-700" />
-            <span>{lang === 'ta' ? 'மாதிரி CSV ஐ பதிவிறக்கு' : 'Download Sample CSV'}</span>
-          </button>
-          <button
-            onClick={handleExportCurrent}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
-          >
-            <Upload className="w-3.5 h-3.5 text-emerald-400" />
-            <span>{lang === 'ta' ? 'தற்போதைய தரவை ஏற்றுமதி செய்' : 'Export Current Data'}</span>
-          </button>
+          {/* View Mode Switcher */}
+          <div className="p-1 bg-slate-200 rounded-xl flex items-center gap-1">
+            <button
+              onClick={() => setViewMode('csv_io')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                viewMode === 'csv_io'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+              <span>{lang === 'ta' ? 'சிஎஸ்வி மேலாண்மை' : 'CSV Import/Export'}</span>
+            </button>
+            <button
+              onClick={() => setViewMode('family_visualizer')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                viewMode === 'family_visualizer'
+                  ? 'bg-emerald-800 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5 text-amber-300" />
+              <span>{lang === 'ta' ? 'குடும்பங்கள் இணைப்புக் காட்சி' : 'Family Visualizer'}</span>
+              <span className="text-[10px] bg-emerald-700 text-white px-1.5 py-0.2 rounded-full font-mono">
+                {familyGroups.length}
+              </span>
+            </button>
+          </div>
+
+          {viewMode === 'csv_io' && (
+            <>
+              <button
+                onClick={handleDownloadSample}
+                className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-emerald-300 shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-700" />
+                <span>{lang === 'ta' ? 'மாதிரி CSV பதிவிறக்கு' : 'Download Sample CSV'}</span>
+              </button>
+              <button
+                onClick={handleExportCurrent}
+                className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
+              >
+                <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{lang === 'ta' ? 'ஏற்றுமதி செய் (Export)' : 'Export CSV'}</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {successBanner && (
-        <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-2">
+        <div className="p-3.5 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
           <span>{successBanner}</span>
         </div>
       )}
 
-      {/* Dataset Selection Tabs */}
-      <div className="flex items-center gap-1.5 p-1.5 bg-slate-200/70 rounded-2xl flex-wrap">
-        <button
-          onClick={() => {
-            setActiveType('assistance');
-            setParsedPreview([]);
-            setParsedDuplicates([]);
-            setParseErrors([]);
-          }}
-          className={`py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 ${
-            activeType === 'assistance'
-              ? 'bg-rose-700 text-white shadow-xs'
-              : 'text-slate-700 hover:bg-white/60'
-          }`}
-        >
-          <Gift className="w-3.5 h-3.5" />
-          <span>{lang === 'ta' ? 'உதவி வழங்கல் & இரட்டை உதவி தடுப்பு CSV' : 'Aid Distribution & Anti-Duplication'}</span>
-        </button>
-
-        <button
-          onClick={() => {
-            setActiveType('families');
-            setParsedPreview([]);
-            setParsedDuplicates([]);
-            setParseErrors([]);
-          }}
-          className={`py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 ${
-            activeType === 'families'
-              ? 'bg-amber-600 text-white shadow-xs'
-              : 'text-slate-700 hover:bg-white/60'
-          }`}
-        >
-          <Users className="w-3.5 h-3.5" />
-          <span>{lang === 'ta' ? 'புதிய குடும்பப் பதிவு CSV (தனித்துவ QR)' : 'Family Registration CSV (Unique QR)'}</span>
-        </button>
-
-        <button
-          onClick={() => {
-            setActiveType('beneficiaries');
-            setParsedPreview([]);
-            setParsedDuplicates([]);
-            setParseErrors([]);
-          }}
-          className={`py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 ${
-            activeType === 'beneficiaries'
-              ? 'bg-emerald-700 text-white shadow-xs'
-              : 'text-slate-700 hover:bg-white/60'
-          }`}
-        >
-          <UserCheck className="w-3.5 h-3.5" />
-          <span>{lang === 'ta' ? 'பிரஜைகள் (Citizens)' : 'Citizens'}</span>
-        </button>
-
-        <button
-          onClick={() => {
-            setActiveType('users');
-            setParsedPreview([]);
-            setParsedDuplicates([]);
-            setParseErrors([]);
-          }}
-          className={`py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 ${
-            activeType === 'users'
-              ? 'bg-slate-800 text-white shadow-xs'
-              : 'text-slate-700 hover:bg-white/60'
-          }`}
-        >
-          <span>👥</span>
-          <span>{lang === 'ta' ? 'அலுவலர்கள் (Staff)' : 'Staff Users'}</span>
-        </button>
-
-        <button
-          onClick={() => {
-            setActiveType('divisions');
-            setParsedPreview([]);
-            setParsedDuplicates([]);
-            setParseErrors([]);
-          }}
-          className={`py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 ${
-            activeType === 'divisions'
-              ? 'bg-slate-800 text-white shadow-xs'
-              : 'text-slate-700 hover:bg-white/60'
-          }`}
-        >
-          <Building className="w-3.5 h-3.5" />
-          <span>{lang === 'ta' ? 'பிரிவுகள் (Divisions)' : 'GN Divisions'}</span>
-        </button>
-      </div>
-
-      {/* Model & Upload Box */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900">
-              {activeType === 'assistance'
-                ? lang === 'ta'
-                  ? 'உதவி வழங்கல் சிஎஸ்வி மாதிரி & பதிவேற்றம் (இரட்டை உதவி தடுப்புடன்)'
-                  : 'Assistance Distribution CSV Model & Upload with Anti-Duplication'
-                : activeType === 'families'
-                ? lang === 'ta'
-                  ? 'குடும்பப் பதிவு சிஎஸ்வி மாதிரி & பதிவேற்றம் (தனித்துவமான QR குறியீட்டுடன்)'
-                  : 'Family Registration CSV Model & Upload with Unique QR Codes'
-                : lang === 'ta'
-                ? 'சிஎஸ்வி கோப்பைப் பதிவேற்றுக'
-                : 'Upload CSV File'}
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {activeType === 'assistance'
-                ? lang === 'ta'
-                  ? 'ஒரே குடும்பத்திற்கே தொடர்ச்சியான உதவிகள் கிடைப்பதை தடுக்க, இந்த மாதிரி மூலம் பதிவேற்றும் போது முறைமை இரட்டை உதவிகளை தானாக சுட்டிக்காட்டும்.'
-                  : 'When uploading assistance records, the engine checks if the family received aid recently to prevent continuous aid abuse.'
-                : activeType === 'families'
-                ? lang === 'ta'
-                  ? 'ஒவ்வொரு குடும்பத்திற்கும் தனித்துவமான Family Master QR உருவாக்கப்பட்டு அனைத்து உறுப்பினர்களும் இணைக்கப்படுவர்.'
-                  : 'Every family receives a unique Master QR code linking all household members.'
-                : lang === 'ta'
-                ? 'தரவுகளை மாதிரியின்படி நிரப்பி பதிவேற்றவும்.'
-                : 'Populate data according to the CSV template and upload.'}
-            </p>
-          </div>
-
-          <button
-            onClick={handleDownloadSample}
-            className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg text-xs font-bold shrink-0 flex items-center gap-1.5"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>{lang === 'ta' ? 'மாதிரி கோப்பை பதிவிறக்கு' : 'Download Template'}</span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            onChange={handleFileChange}
-            className="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200 cursor-pointer"
-          />
-          {fileName && (
-            <span className="text-xs text-slate-500 font-mono">
-              {fileName}
-            </span>
-          )}
-        </div>
-
-        {parseErrors.length > 0 && (
-          <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-xs rounded-xl space-y-1">
-            <div className="font-bold">⚠️ {lang === 'ta' ? 'பிழைகள்:' : 'Errors:'}</div>
-            {parseErrors.map((err, idx) => (
-              <div key={idx} className="text-[11px]">• {err}</div>
+      {/* ========================================================================= */}
+      {/* VIEW MODE 1: CSV IMPORT / EXPORT WITH ALL REQUESTED MODELS                */}
+      {/* ========================================================================= */}
+      {viewMode === 'csv_io' && (
+        <div className="space-y-5">
+          {/* Dataset Model Selection Tabs (Full 9 Dedicated Models) */}
+          <div className="p-1.5 bg-slate-200/80 rounded-2xl flex items-center gap-1.5 flex-wrap">
+            {[
+              { id: 'families', labelTa: '👨‍👩‍👧‍👦 குடும்பங்கள் (உறவுகளுடன்)', labelEn: 'Family Units (Relationships)', color: 'bg-emerald-800 text-white' },
+              { id: 'elderly', labelTa: '👵 முதியோர் பதிவு (Elderly)', labelEn: 'Elderly CSV', color: 'bg-purple-800 text-white' },
+              { id: 'pregnant', labelTa: '🤰 கர்ப்பிணிப் பதிவு (Maternity)', labelEn: 'Maternity CSV', color: 'bg-pink-800 text-white' },
+              { id: 'disability', labelTa: '♿ அங்கவீனர் பதிவு (Disability)', labelEn: 'Disability CSV', color: 'bg-blue-800 text-white' },
+              { id: 'aswesuma', labelTa: '🌾 அஸ்வெசும நலன்புரி (Aswesuma)', labelEn: 'Aswesuma CSV', color: 'bg-amber-700 text-white' },
+              { id: 'beneficiaries', labelTa: '👥 பிரஜைகள் (All Citizens)', labelEn: 'Citizens CSV', color: 'bg-teal-800 text-white' },
+              { id: 'assistance', labelTa: '🎁 நிவாரணம் & உதவி வழங்கல்', labelEn: 'Relief Aid CSV', color: 'bg-rose-800 text-white' },
+              { id: 'users', labelTa: '👔 உத்தியோகத்தர்கள் (Staff)', labelEn: 'Staff Users CSV', color: 'bg-slate-800 text-white' },
+              { id: 'divisions', labelTa: '🏛️ பிரிவுகள் (Divisions)', labelEn: 'GN Divisions', color: 'bg-slate-800 text-white' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveType(tab.id as ActiveCsvType);
+                  setParsedPreview([]);
+                  setParsedDuplicates([]);
+                  setParsedPregnantMothers([]);
+                  setParseErrors([]);
+                }}
+                className={`py-2 px-3 text-xs font-bold rounded-xl transition-all ${
+                  activeType === tab.id ? `${tab.color} shadow-xs` : 'text-slate-700 hover:bg-white/70'
+                }`}
+              >
+                {lang === 'ta' ? tab.labelTa : tab.labelEn}
+              </button>
             ))}
           </div>
-        )}
-      </div>
 
-      {/* PREVIEW: ASSISTANCE DISTRIBUTION (WITH DUPLICATE PREVENTION HIGHLIGHTS) */}
-      {activeType === 'assistance' && (parsedPreview.length > 0 || parsedDuplicates.length > 0) && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-            <div className="flex items-center gap-3 text-xs flex-wrap">
-              <span className="font-bold text-slate-900">
-                {lang === 'ta' ? 'பகுப்பாய்வு முடிவுகள்:' : 'Analysis:'}
-              </span>
-              <span className="px-2.5 py-1 bg-emerald-100 text-emerald-900 rounded-full font-bold">
-                🟢 {parsedPreview.length} {lang === 'ta' ? 'தகுதியான புதிய உதவிகள்' : 'Eligible First-Time Aid'}
-              </span>
-              {parsedDuplicates.length > 0 && (
-                <span className="px-2.5 py-1 bg-red-100 text-red-900 rounded-full font-bold">
-                  ⚠️ {parsedDuplicates.length} {lang === 'ta' ? 'இரட்டை உதவி எச்சரிக்கை!' : 'Duplicate Aid Detected!'}
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => handleCommitImport(false)}
-                disabled={parsedPreview.length === 0}
-                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>
+          {/* Model Description & Upload Box */}
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <span>📥</span>
+                  <span>
+                    {activeType === 'families'
+                      ? lang === 'ta' ? 'குடும்பங்கள் & உறவுமுறை சிஎஸ்வி மாதிரி (Family Code & Relationship Model)' : 'Family Units & Relationships Model'
+                      : activeType === 'elderly'
+                      ? lang === 'ta' ? 'முதியோர் பதிவு சிஎஸ்வி மாதிரி (Senior Citizens CSV Model)' : 'Senior Citizens CSV Model'
+                      : activeType === 'pregnant'
+                      ? lang === 'ta' ? 'கர்ப்பிணித் தாய்மார் பதிவு சிஎஸ்வி மாதிரி (Maternity & Nutrition Stamps Model)' : 'Pregnant Mothers & Nutrition Stamps Model'
+                      : activeType === 'disability'
+                      ? lang === 'ta' ? 'அங்கவீனர் / மாற்றுத்திறனாளி சிஎஸ்வி மாதிரி (Disability Rights Model)' : 'Disability Rights CSV Model'
+                      : activeType === 'aswesuma'
+                      ? lang === 'ta' ? 'அஸ்வெசும நலன்புரி சிஎஸ்வி மாதிரி (Aswesuma Poverty Relief Model)' : 'Aswesuma Poverty Relief Model'
+                      : activeType === 'assistance'
+                      ? lang === 'ta' ? 'நிவாரண உதவி வழங்கல் சிஎஸ்வி மாதிரி (இரட்டை உதவி தடுப்புடன்)' : 'Aid Distribution CSV with Duplicate Prevention'
+                      : activeType === 'beneficiaries'
+                      ? lang === 'ta' ? 'முழுமையான பிரஜைகள் சிஎஸ்வி மாதிரி' : 'General Citizens CSV Model'
+                      : lang === 'ta' ? 'அலுவலக சிஎஸ்வி மாதிரி' : 'Staff / Division CSV Model'}
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
                   {lang === 'ta'
-                    ? '✅ இரட்டை உதவிகளைத் தடுத்து தகுதியானவர்களை மட்டும் பதிவேற்று'
-                    : 'Filter Duplicates & Import Eligible Only'}
-                </span>
-              </button>
+                    ? 'ஒவ்வொரு பதிவிலும் குடும்பத்திற்கு பொதுவான Family QR எண் மற்றும் உறவுநிலை (தாய், தந்தை, மகன், மகள், தாத்தா, பாட்டி) கேட்கப்பட்டு ஒரே குடும்பமாக இணைக்கப்படும்.'
+                    : 'Each record links to a shared Family QR Code and relationship role (Father, Mother, Son, Daughter, Grandparents) connecting the whole household.'}
+                </p>
+              </div>
 
-              {parsedDuplicates.length > 0 && (
-                <button
-                  onClick={() => handleCommitImport(true)}
-                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold transition-colors"
-                >
-                  {lang === 'ta' ? 'விதிவிலக்காக அனைத்தையும் பதிவேற்று' : 'Force Import All (Override)'}
-                </button>
+              <button
+                onClick={handleDownloadSample}
+                className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-bold shrink-0 flex items-center gap-1.5 shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-700" />
+                <span>{lang === 'ta' ? 'மாதிரி கோப்பை பதிவிறக்கு' : 'Download Sample CSV'}</span>
+              </button>
+            </div>
+
+            {/* File Upload Selector */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFileChange}
+                className="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200 cursor-pointer"
+              />
+              {fileName && (
+                <span className="text-xs text-slate-600 font-mono bg-slate-100 px-2.5 py-1 rounded-lg">
+                  📄 {fileName}
+                </span>
               )}
             </div>
+
+            {parseErrors.length > 0 && (
+              <div className="p-3.5 bg-red-50 border border-red-200 text-red-900 text-xs rounded-xl space-y-1">
+                <div className="font-bold flex items-center gap-1">
+                  <AlertTriangle className="w-4 h-4 text-red-600" />
+                  <span>{lang === 'ta' ? 'கண்டறியப்பட்ட பிழைகள்:' : 'CSV Parsing Warnings:'}</span>
+                </div>
+                {parseErrors.map((err, idx) => (
+                  <div key={idx} className="text-[11px]">• {err}</div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Duplicates Table */}
-          {parsedDuplicates.length > 0 && (
-            <div className="bg-red-50/80 border border-red-300 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-bold text-red-950">
-                <ShieldAlert className="w-4 h-4 text-red-600" />
-                <span>
-                  {lang === 'ta'
-                    ? `⚠️ பின்வரும் ${parsedDuplicates.length} குடும்பங்களுக்கு ஏற்கனவே சமீபத்தில் உதவி வழங்கப்பட்டுள்ளது (தொடர் உதவி தடுப்பு எச்சரிக்கை):`
-                    : `⚠️ The following ${parsedDuplicates.length} families have received aid recently (Continuous Aid Duplication Alert):`}
-                </span>
+          {/* PARSED PREVIEW FOR CITIZENS / FAMILIES / ELDERLY / PREGNANT / DISABILITY / ASWESUMA */}
+          {activeType !== 'assistance' && parsedPreview.length > 0 && (
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>
+                      {lang === 'ta'
+                        ? `சரிபார்க்கப்பட்ட பதிவுகள் (${parsedPreview.length}) - முன்னோட்டம்`
+                        : `Verified Records (${parsedPreview.length}) - Preview`}
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {lang === 'ta'
+                      ? 'கீழே உள்ள விபரங்களை சரிபார்த்து "தரவுத்தளத்தில் இணைக்க" பொத்தானை அழுத்தவும்.'
+                      : 'Review the parsed members and their family relationship linkages below before committing.'}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => handleCommitImport(false)}
+                  className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{lang === 'ta' ? '✅ தரவுத்தளத்தில் இணைக்க (Commit Import)' : 'Commit Import to Database'}</span>
+                </button>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs bg-white rounded-xl overflow-hidden border border-red-200">
-                  <thead className="bg-red-100 text-red-950 text-[11px] uppercase tracking-wider">
+              {/* Preview Table */}
+              <div className="overflow-x-auto max-h-96 border border-slate-200 rounded-xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-700 text-[11px] uppercase tracking-wider sticky top-0 border-b border-slate-200">
                     <tr>
-                      <th className="p-2.5">குடும்ப இலக்கம்</th>
-                      <th className="p-2.5">பெயர் & NIC</th>
-                      <th className="p-2.5">கோரப்பட்ட உதவி</th>
-                      <th className="p-2.5">காரணம் / கடந்த கால உதவி விபரம்</th>
-                      <th className="p-2.5">நிலை</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-red-100">
-                    {parsedDuplicates.map((rec) => (
-                      <tr key={rec.id} className="hover:bg-red-50/50">
-                        <td className="p-2.5 font-mono font-bold text-red-950">{rec.familyCode}</td>
-                        <td className="p-2.5">
-                          <div className="font-bold text-slate-900">{rec.beneficiaryName}</div>
-                          <div className="font-mono text-[10px] text-slate-500">{rec.beneficiaryNic}</div>
-                        </td>
-                        <td className="p-2.5 font-semibold text-slate-800">{rec.aidDescription} ({rec.amountOrValue})</td>
-                        <td className="p-2.5 text-[11px] text-red-800 font-medium">
-                          {rec.duplicateWarningReason || 'இக்குடும்பம் ஏற்கனவே உதவி பெற்றுள்ளது.'}
-                        </td>
-                        <td className="p-2.5">
-                          <span className="px-2 py-0.5 bg-red-200 text-red-900 font-bold text-[10px] rounded-full">
-                            BLOCKED / DUPLICATE
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Eligible Table */}
-          {parsedPreview.length > 0 && (
-            <div className="bg-white border border-emerald-300 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-bold text-emerald-950">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>
-                  {lang === 'ta'
-                    ? `🟢 தகுதியான புதிய உதவிகள் (${parsedPreview.length} குடும்பங்கள்):`
-                    : `🟢 Eligible First-Time Recipients (${parsedPreview.length} families):`}
-                </span>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs bg-white rounded-xl overflow-hidden border border-slate-200">
-                  <thead className="bg-emerald-50 text-emerald-950 text-[11px] uppercase tracking-wider">
-                    <tr>
-                      <th className="p-2.5">குடும்ப இலக்கம்</th>
-                      <th className="p-2.5">பயனாளி பெயர்</th>
-                      <th className="p-2.5">உதவி வகை & விபரம்</th>
-                      <th className="p-2.5">பெறுமதி / அளவு</th>
-                      <th className="p-2.5">திகதி</th>
+                      <th className="p-2.5">#</th>
+                      <th className="p-2.5">குடும்ப QR / Code</th>
+                      <th className="p-2.5">குடும்ப உறவுநிலை</th>
+                      <th className="p-2.5">அடையாள அட்டை (NIC)</th>
+                      <th className="p-2.5">பெயர்</th>
+                      <th className="p-2.5">வயது</th>
+                      <th className="p-2.5">நலன்புரி உதவிகள் (Checklist)</th>
+                      <th className="p-2.5">பிரிவு</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {parsedPreview.map((rec) => (
-                      <tr key={rec.id} className="hover:bg-slate-50">
-                        <td className="p-2.5 font-mono font-bold text-emerald-900">{rec.familyCode}</td>
-                        <td className="p-2.5">
-                          <div className="font-bold text-slate-900">{rec.beneficiaryName}</div>
-                          <div className="font-mono text-[10px] text-slate-500">{rec.beneficiaryNic}</div>
-                        </td>
-                        <td className="p-2.5 font-medium text-slate-800">{rec.aidDescription}</td>
-                        <td className="p-2.5 font-mono font-bold text-slate-800">{rec.amountOrValue}</td>
-                        <td className="p-2.5 font-mono text-slate-600">{rec.distributedDate}</td>
-                      </tr>
-                    ))}
+                    {parsedPreview.map((row, idx) => {
+                      const relLabel = getRelationshipTamilLabel(row.familyRelationship);
+                      const schemes: WelfareScheme[] = row.welfareSchemes || (row.welfareScheme ? [row.welfareScheme] : []);
+                      const age = calculateAge(row.dob);
+
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50/80">
+                          <td className="p-2.5 text-slate-400 font-mono">{idx + 1}</td>
+                          <td className="p-2.5 font-mono font-bold text-emerald-950">
+                            <span className="bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                              {row.familyCode || 'FAM-GEN'}
+                            </span>
+                          </td>
+                          <td className="p-2.5">
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-900 border border-blue-200 rounded text-[11px] font-bold">
+                              {relLabel}
+                            </span>
+                          </td>
+                          <td className="p-2.5 font-mono text-slate-800 font-semibold">{row.nic}</td>
+                          <td className="p-2.5">
+                            <div className="font-bold text-slate-900">{row.nameTa}</div>
+                            <div className="text-[10px] text-slate-500">{row.nameEn}</div>
+                          </td>
+                          <td className="p-2.5 font-mono text-slate-700">
+                            {age > 0 ? `${age} yrs` : '-'}
+                          </td>
+                          <td className="p-2.5">
+                            <div className="flex flex-wrap gap-1">
+                              {schemes.length > 0
+                                ? schemes.map((s) => getWelfareBadge(s))
+                                : <span className="text-[10px] text-slate-400 italic">None</span>}
+                            </div>
+                          </td>
+                          <td className="p-2.5 font-mono text-slate-600">{row.divisionCode}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* PREVIEW: ASSISTANCE DISTRIBUTION (WITH DUPLICATE ENGINE) */}
+          {activeType === 'assistance' && (parsedPreview.length > 0 || parsedDuplicates.length > 0) && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+                <div className="flex items-center gap-3 text-xs flex-wrap">
+                  <span className="font-bold text-slate-900">
+                    {lang === 'ta' ? 'பகுப்பாய்வு முடிவுகள்:' : 'Analysis:'}
+                  </span>
+                  <span className="px-2.5 py-1 bg-emerald-100 text-emerald-900 rounded-full font-bold">
+                    🟢 {parsedPreview.length} {lang === 'ta' ? 'தகுதியான புதிய உதவிகள்' : 'Eligible First-Time Aid'}
+                  </span>
+                  {parsedDuplicates.length > 0 && (
+                    <span className="px-2.5 py-1 bg-red-100 text-red-900 rounded-full font-bold">
+                      ⚠️ {parsedDuplicates.length} {lang === 'ta' ? 'இரட்டை உதவி எச்சரிக்கை!' : 'Duplicate Aid Detected!'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => handleCommitImport(false)}
+                    disabled={parsedPreview.length === 0}
+                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>
+                      {lang === 'ta'
+                        ? '✅ இரட்டை உதவிகளைத் தடுத்து தகுதியானவர்களை மட்டும் பதிவேற்று'
+                        : 'Filter Duplicates & Import Eligible Only'}
+                    </span>
+                  </button>
+
+                  {parsedDuplicates.length > 0 && (
+                    <button
+                      onClick={() => handleCommitImport(true)}
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold transition-colors"
+                    >
+                      {lang === 'ta' ? 'விதிவிலக்காக அனைத்தையும் பதிவேற்று' : 'Force Import All (Override)'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Duplicates Alert Table */}
+              {parsedDuplicates.length > 0 && (
+                <div className="bg-red-50/80 border border-red-300 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-red-950">
+                    <ShieldAlert className="w-4 h-4 text-red-600" />
+                    <span>
+                      {lang === 'ta'
+                        ? `⚠️ பின்வரும் ${parsedDuplicates.length} குடும்பங்களுக்கு ஏற்கனவே சமீபத்தில் உதவி வழங்கப்பட்டுள்ளது (தொடர் உதவி தடுப்பு எச்சரிக்கை):`
+                        : `⚠️ The following ${parsedDuplicates.length} families have received aid recently:`}
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs bg-white rounded-xl overflow-hidden border border-red-200">
+                      <thead className="bg-red-100 text-red-950 text-[11px] uppercase tracking-wider">
+                        <tr>
+                          <th className="p-2.5">குடும்ப இலக்கம்</th>
+                          <th className="p-2.5">பெயர் & NIC</th>
+                          <th className="p-2.5">கோரப்பட்ட உதவி</th>
+                          <th className="p-2.5">காரணம் / கடந்த கால உதவி விபரம்</th>
+                          <th className="p-2.5">நிலை</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-red-100">
+                        {parsedDuplicates.map((rec) => (
+                          <tr key={rec.id} className="hover:bg-red-50/50">
+                            <td className="p-2.5 font-mono font-bold text-red-950">{rec.familyCode}</td>
+                            <td className="p-2.5">
+                              <div className="font-bold text-slate-900">{rec.beneficiaryName}</div>
+                              <div className="font-mono text-[10px] text-slate-500">{rec.beneficiaryNic}</div>
+                            </td>
+                            <td className="p-2.5 font-semibold text-slate-800">{rec.aidDescription} ({rec.amountOrValue})</td>
+                            <td className="p-2.5 text-[11px] text-red-800 font-medium">
+                              {rec.duplicateWarningReason || 'இக்குடும்பம் ஏற்கனவே உதவி பெற்றுள்ளது.'}
+                            </td>
+                            <td className="p-2.5">
+                              <span className="px-2 py-0.5 bg-red-200 text-red-900 font-bold text-[10px] rounded-full">
+                                BLOCKED / DUPLICATE
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
 
-      {/* PREVIEW: OTHER DATASETS (FAMILIES, CITIZENS, USERS) */}
-      {activeType !== 'assistance' && parsedPreview.length > 0 && (
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-bold text-slate-900">
-              {lang === 'ta' ? `சரிபார்க்கப்பட்ட பதிவுகள் (${parsedPreview.length})` : `Parsed Records Preview (${parsedPreview.length})`}
-            </h4>
-            <button
-              onClick={() => handleCommitImport(false)}
-              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
-            >
-              {lang === 'ta' ? '✅ தரவுத்தளத்தில் இணைக்க (Commit)' : 'Commit Import'}
-            </button>
+      {/* ========================================================================= */}
+      {/* VIEW MODE 2: CONNECTED FAMILY UNITS VISUALIZER (தாய், தந்தை, மகன், மகள்)   */}
+      {/* ========================================================================= */}
+      {viewMode === 'family_visualizer' && (
+        <div className="space-y-4">
+          {/* Filter Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder={lang === 'ta' ? 'குடும்ப QR எண், தந்தை/தாய் பெயர், NIC மூலம் தேடுக...' : 'Search Family Code, Parent Name, NIC...'}
+                value={familySearchQuery}
+                onChange={(e) => setFamilySearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={familyDivisionFilter}
+                onChange={(e) => setFamilyDivisionFilter(e.target.value)}
+                className="px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              >
+                <option value="ALL">🏛️ {lang === 'ta' ? 'அனைத்து பிரிவுகளும்' : 'All Divisions'}</option>
+                {divisions.map((d) => (
+                  <option key={d.code} value={d.code}>
+                    {d.code} - {d.nameTa}
+                  </option>
+                ))}
+              </select>
+
+              <span className="text-xs font-bold text-slate-500 font-mono bg-slate-100 px-3 py-2 rounded-xl">
+                {familyGroups.length} {lang === 'ta' ? 'குடும்பங்கள்' : 'Families'}
+              </span>
+            </div>
           </div>
 
-          <div className="overflow-x-auto max-h-80">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-700 text-[11px] uppercase tracking-wider sticky top-0">
-                <tr>
-                  <th className="p-2.5">#</th>
-                  <th className="p-2.5">அடையாளம் / குறியீடு</th>
-                  <th className="p-2.5">பெயர்</th>
-                  <th className="p-2.5">விபரம்</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {parsedPreview.slice(0, 15).map((row, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50">
-                    <td className="p-2.5 text-slate-400 font-mono">{idx + 1}</td>
-                    <td className="p-2.5 font-mono font-bold text-slate-800">{row.familyCode || row.nic || row.id}</td>
-                    <td className="p-2.5 font-medium text-slate-900">{row.nameTa || row.nameEn || row.name}</td>
-                    <td className="p-2.5 text-slate-500">{row.notes || row.address || row.role}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Families Card Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {familyGroups.map(([fCode, members]) => {
+              const divCode = members[0]?.divisionCode || '211';
+              const divName = divisions.find((d) => d.code === divCode)?.nameTa || divCode;
+              const head = members.find((m) => m.familyHead || m.familyRelationship === 'HEAD' || m.familyRelationship === 'FATHER') || members[0];
+
+              return (
+                <div
+                  key={fCode}
+                  className="bg-white rounded-2xl border border-slate-200 hover:border-emerald-500 p-4 sm:p-5 shadow-xs transition-all space-y-3"
+                >
+                  {/* Family Header */}
+                  <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-800 text-white flex items-center justify-center font-bold text-sm">
+                        <Users className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-mono font-bold text-slate-900 text-sm">{fCode}</h4>
+                          <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium">
+                            {divCode} - {divName}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          {lang === 'ta' ? 'தலைவர்:' : 'Head:'} <strong className="text-slate-800">{head?.nameTa}</strong> ({members.length} {lang === 'ta' ? 'உறுப்பினர்கள்' : 'members'})
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setSelectedFamilyCodeForModal(fCode)}
+                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>{lang === 'ta' ? 'குடும்ப மரம் & QR' : 'Tree & QR'}</span>
+                    </button>
+                  </div>
+
+                  {/* Connected Members List: தந்தை, தாய், மகன், மகள் */}
+                  <div className="space-y-1.5">
+                    {members.map((m) => {
+                      const relLabel = getRelationshipTamilLabel(m.familyRelationship);
+                      const age = calculateAge(m.dob);
+                      const schemes: WelfareScheme[] = m.welfareSchemes || (m.welfareScheme && m.welfareScheme !== 'NONE' ? [m.welfareScheme] : []);
+
+                      return (
+                        <div
+                          key={m.id}
+                          className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between gap-2 text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">
+                              {m.familyRelationship === 'FATHER' ? '👨' : m.familyRelationship === 'MOTHER' ? '👩' : m.familyRelationship === 'SON' ? '👦' : m.familyRelationship === 'DAUGHTER' ? '👧' : m.gender === 'FEMALE' ? '👩' : '👨'}
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <strong className="text-slate-900">{m.nameTa}</strong>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-blue-100 text-blue-900 border border-blue-200">
+                                  {relLabel}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                {m.nic} · {age} {lang === 'ta' ? 'வயது' : 'yrs'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1 justify-end max-w-xs">
+                            {schemes.slice(0, 2).map((s) => getWelfareBadge(s))}
+                            {schemes.length > 2 && (
+                              <span className="text-[9px] font-bold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                                +{schemes.length - 2}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
+      )}
+
+      {/* Interactive Family Tree Modal */}
+      {selectedFamilyCodeForModal && (
+        <FamilyGroupModal
+          familyCode={selectedFamilyCodeForModal}
+          allBeneficiaries={beneficiaries}
+          divisions={divisions}
+          lang={lang}
+          onClose={() => setSelectedFamilyCodeForModal(null)}
+        />
       )}
     </div>
   );

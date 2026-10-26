@@ -1,5 +1,14 @@
 import React, { useState, useMemo } from 'react';
-import { PregnantMotherRecord, MonthlyStampCollection, GNDivision, User } from '../types';
+import {
+  PregnantMotherRecord,
+  MonthlyStampCollection,
+  GNDivision,
+  User,
+  FamilyRelationship,
+  WelfareScheme,
+  FAMILY_RELATIONSHIP_OPTIONS,
+  ALL_WELFARE_SCHEMES_LIST,
+} from '../types';
 import { Language, translations } from '../translations/i18n';
 import { parseSriLankanNic } from '../utils/nicParser';
 import {
@@ -8,7 +17,7 @@ import {
   checkDuplicateActivePregnantMother,
   getPregnancyCountForNic,
 } from '../services/storage';
-import { downloadCsvFile, escapeCsv } from '../services/csv';
+import { downloadCsvFile, escapeCsv, getRelationshipTamilLabel } from '../services/csv';
 import {
   Baby,
   Plus,
@@ -70,10 +79,13 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
   // Month Checklist Modal for a specific Mother
   const [checklistMother, setChecklistMother] = useState<PregnantMotherRecord | null>(null);
 
-  // Form State for New Pregnant Mother Registration
+  // Form State for New Pregnant Mother Registration (Requirements 01, 02, 03)
   const [formName, setFormName] = useState('');
   const [formNic, setFormNic] = useState('');
   const [formDivision, setFormDivision] = useState(isGramaNiladhari ? officerDivision : '211');
+  const [formFamilyCode, setFormFamilyCode] = useState('FAM-211-101');
+  const [formFamilyRelationship, setFormFamilyRelationship] = useState<FamilyRelationship>('MOTHER');
+  const [formWelfareSchemes, setFormWelfareSchemes] = useState<WelfareScheme[]>(['PREGNANT_NUTRITION']);
   const [formPhone, setFormPhone] = useState('');
   const [formRegDate, setFormRegDate] = useState(new Date().toISOString().slice(0, 10));
   const [formStampDate, setFormStampDate] = useState('');
@@ -104,10 +116,24 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
     setFormPregnancyNumber(count);
   };
 
+  const handleToggleWelfareScheme = (scheme: WelfareScheme) => {
+    const current = new Set(formWelfareSchemes);
+    if (current.has(scheme)) {
+      current.delete(scheme);
+    } else {
+      current.add(scheme);
+    }
+    setFormWelfareSchemes(Array.from(current));
+  };
+
   const handleOpenAddModal = () => {
+    const div = isGramaNiladhari ? officerDivision : '211';
     setFormName('');
     setFormNic('');
-    setFormDivision(isGramaNiladhari ? officerDivision : '211');
+    setFormDivision(div);
+    setFormFamilyCode(`FAM-${div}-${Math.floor(Math.random() * 800 + 100)}`);
+    setFormFamilyRelationship('MOTHER');
+    setFormWelfareSchemes(['PREGNANT_NUTRITION']);
     setFormPhone('');
     setFormRegDate(new Date().toISOString().slice(0, 10));
     setFormStampDate('');
@@ -139,12 +165,16 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
     const cleanStampNo = formStampNo.trim();
     const hasStamp = !!cleanStampNo;
     const initialStatus = hasStamp ? 'ACTIVE_COLLECTING' : 'WAITING_STAMP';
+    const famCode = formFamilyCode.trim() || `FAM-${formDivision}-001`;
 
     const newRecord: PregnantMotherRecord = {
       id: `MAT-${formDivision}-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`,
       name: formName.trim(),
       nic: cleanNic,
       divisionCode: formDivision,
+      familyCode: famCode,
+      familyRelationship: formFamilyRelationship,
+      welfareSchemes: formWelfareSchemes,
       phone: formPhone.trim(),
       registrationDate: formRegDate,
       expectedCompletionDate: formExpectedCompletionDate,
@@ -162,7 +192,7 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
 
     const updated = [newRecord, ...pregnantMothers];
     onUpdatePregnantMothers(updated);
-    onAuditLog('REGISTER_PREGNANT_MOTHER', `Registered pregnant mother ${newRecord.name} (NIC: ${newRecord.nic}, Div: ${newRecord.divisionCode})`);
+    onAuditLog('REGISTER_PREGNANT_MOTHER', `Registered pregnant mother ${newRecord.name} (NIC: ${newRecord.nic}, Div: ${newRecord.divisionCode}, Family: ${famCode})`);
 
     setShowAddModal(false);
   };
@@ -526,10 +556,20 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
                   return (
                     <tr key={m.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900 text-xs">{m.name}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-slate-900 text-xs">{m.name}</span>
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-pink-100 text-pink-900 border border-pink-200">
+                            {getRelationshipTamilLabel(m.familyRelationship || 'MOTHER')}
+                          </span>
+                        </div>
                         <div className="font-mono text-[11px] font-semibold text-emerald-900 mt-0.5">
                           {m.nic}
                         </div>
+                        {m.familyCode && (
+                          <div className="text-[10px] text-blue-800 font-mono font-bold mt-0.5">
+                            QR அலகு: {m.familyCode}
+                          </div>
+                        )}
                       </td>
 
                       <td className="py-3 px-4">
@@ -729,6 +769,111 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
                     onChange={(e) => setFormPhone(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono"
                   />
+                </div>
+              </div>
+
+              {/* Requirement 03: Family QR Code & Relationship in Registration */}
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-blue-950 text-xs flex items-center gap-1.5">
+                    <span>👨‍👩‍👧‍👦</span>
+                    <span>குடும்ப அலகு & பொதுவான கிவ் ஆர் (Family Unit & Common QR Code)</span>
+                  </div>
+                  <span className="text-[10px] bg-blue-200 text-blue-900 font-mono font-bold px-2 py-0.5 rounded">
+                    பொது அலகு
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-blue-950 mb-1">
+                      குடும்ப QR எண் (Family Master Code) *
+                    </label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        required
+                        value={formFamilyCode}
+                        onChange={(e) => setFormFamilyCode(e.target.value.trim().toUpperCase())}
+                        placeholder="e.g. FAM-211-102"
+                        className="w-full px-3 py-1.5 border border-blue-300 rounded-lg font-mono font-bold text-blue-950 bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormFamilyCode(`FAM-${formDivision}-${Math.floor(Math.random() * 800 + 100)}`)}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg whitespace-nowrap shadow-xs"
+                      >
+                        🎲 புதிய எண்
+                      </button>
+                    </div>
+                    <span className="text-[10px] text-blue-800 mt-1 block">
+                      ℹ️ குடும்பத்தின் பொதுவான கிவ் ஆர் இலக்கம். தாய், தந்தை, பிள்ளைகள் அனைவரும் இந்த ஒரே எண்ணையே பகிர்வர்.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-blue-950 mb-1">
+                      குடும்ப உறவு நிலை (Family Relationship) *
+                    </label>
+                    <select
+                      value={formFamilyRelationship}
+                      onChange={(e) => setFormFamilyRelationship(e.target.value as FamilyRelationship)}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg bg-white font-bold text-slate-800"
+                    >
+                      {FAMILY_RELATIONSHIP_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.icon} {lang === 'ta' ? opt.labelTa : opt.labelEn}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      இயல்புநிலை: 👩 தாய் (Mother)
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Requirement 02: Multi-Welfare Aid Checklist (செக் லிஸ்ட்) */}
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="font-bold text-emerald-950 flex items-center gap-1.5">
+                      <span>📋</span>
+                      <span>நலன்புரி உதவிகள் செக் லிஸ்ட் (Multi-Welfare Checklist):</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-800 block">
+                      ஒரு தாய் கர்ப்பிணி ஊட்டச்சத்து முத்திரையுடன் அஸ்வெசும, சமூர்த்தி போன்ற பிற உதவிகளையும் பெறலாம்.
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded">
+                    {formWelfareSchemes.length} உதவிகள்
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1.5 bg-white rounded-lg border border-emerald-200">
+                  {ALL_WELFARE_SCHEMES_LIST.map((scheme) => {
+                    const isChecked = formWelfareSchemes.includes(scheme.id);
+                    return (
+                      <label
+                        key={scheme.id}
+                        className={`flex items-start gap-2 p-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                          isChecked
+                            ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-950'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleWelfareScheme(scheme.id)}
+                          className="mt-0.5 rounded text-emerald-700 focus:ring-emerald-600"
+                        />
+                        <span className="text-[11px] truncate">
+                          {lang === 'ta' ? scheme.labelTa : scheme.labelEn}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 

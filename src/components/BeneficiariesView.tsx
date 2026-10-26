@@ -1,12 +1,26 @@
 import React, { useState, useMemo } from 'react';
-import { Beneficiary, GNDivision, User, WelfareScheme, ChronicIllness, WelfareStatus, FamilyRelationship, CitizenStatus } from '../types';
+import {
+  Beneficiary,
+  GNDivision,
+  User,
+  WelfareScheme,
+  ChronicIllness,
+  WelfareStatus,
+  FamilyRelationship,
+  CitizenStatus,
+  FAMILY_RELATIONSHIP_OPTIONS,
+  ALL_WELFARE_SCHEMES_LIST,
+} from '../types';
 import { Language, translations } from '../translations/i18n';
 import { BeneficiaryIdCardModal } from './BeneficiaryIdCardModal';
 import { PrintableFilteredReportModal } from './PrintableFilteredReportModal';
 import { DisabilityOfficerManagementView } from './DisabilityOfficerManagementView';
+import { FamilyGroupModal } from './FamilyGroupModal';
 import { calculateAge, generateSystemCitizenId, generateProvisionalNic } from '../services/storage';
 import { generateQrDataUrl } from '../utils/barcode';
 import { parseSriLankanNic } from '../utils/nicParser';
+import { getRelationshipTamilLabel } from '../services/csv';
+import { Users, QrCode } from 'lucide-react';
 
 interface BeneficiariesViewProps {
   beneficiaries: Beneficiary[];
@@ -72,6 +86,9 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
   const [selectedFamilyForModal, setSelectedFamilyForModal] = useState<string | null>(null);
   const [familyQrDataUrl, setFamilyQrDataUrl] = useState<string>('');
 
+  // Family Master Tree Modal State
+  const [selectedFamilyTreeCode, setSelectedFamilyTreeCode] = useState<string | null>(null);
+
   // Status Change Modal State (Requirement 07: மரணப்பதிவு / பதிவுமாற்றம்)
   const [statusModalBeneficiary, setStatusModalBeneficiary] = useState<Beneficiary | null>(null);
   const [statusForm, setStatusForm] = useState<{
@@ -101,11 +118,13 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
     divisionCode: isGramaNiladhari ? officerDivision : '211',
     gender: 'MALE',
     familyHead: true,
+    familyCode: 'FAM-211-101',
+    familyRelationship: 'HEAD',
     welfareScheme: 'NONE',
+    welfareSchemes: [],
     welfareStatus: 'ACTIVE',
     chronicIllness: 'NONE',
     isProvisionalNic: false,
-    familyRelationship: 'HEAD',
   });
 
   // Filtered dataset
@@ -227,6 +246,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
     setIsNewRecord(true);
     const targetDiv = isGramaNiladhari ? officerDivision : '211';
     const autoSystemId = generateSystemCitizenId(targetDiv, beneficiaries.length + 1);
+    const defaultFamCode = `FAM-${targetDiv}-${Math.floor(Math.random() * 800 + 100)}`;
 
     setFormData({
       id: autoSystemId,
@@ -240,8 +260,11 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
       address: '',
       divisionCode: targetDiv,
       familyHead: true,
+      familyCode: defaultFamCode,
+      familyRelationship: 'HEAD',
       householdNo: `HH-${targetDiv}-${Math.floor(Math.random() * 900 + 100)}`,
       welfareScheme: 'NONE',
+      welfareSchemes: [],
       welfareStatus: 'ACTIVE',
       chronicIllness: 'NONE',
       notes: '',
@@ -251,7 +274,17 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
 
   const handleOpenEdit = (b: Beneficiary) => {
     setIsNewRecord(false);
-    setFormData({ ...b });
+    const currentSchemes = b.welfareSchemes && b.welfareSchemes.length > 0
+      ? b.welfareSchemes
+      : (b.welfareScheme && b.welfareScheme !== 'NONE' ? [b.welfareScheme] : []);
+
+    setFormData({
+      ...b,
+      familyCode: b.familyCode || (b.householdNo ? `FAM-${b.householdNo.replace(/^HH-/, '')}` : `FAM-${b.divisionCode}-001`),
+      familyRelationship: b.familyRelationship || (b.familyHead ? 'HEAD' : 'OTHER'),
+      welfareSchemes: currentSchemes,
+      welfareScheme: b.welfareScheme || (currentSchemes[0] || 'NONE'),
+    });
     setEditingBeneficiary(b);
   };
 
@@ -274,6 +307,23 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
     }
   };
 
+  // Toggle a welfare scheme in the multi-select checklist
+  const handleToggleWelfareScheme = (scheme: WelfareScheme) => {
+    const current = new Set(formData.welfareSchemes || []);
+    if (current.has(scheme)) {
+      current.delete(scheme);
+    } else {
+      current.add(scheme);
+    }
+    const updatedArray = Array.from(current);
+    const primaryScheme = updatedArray.length > 0 ? updatedArray[0] : 'NONE';
+    setFormData({
+      ...formData,
+      welfareSchemes: updatedArray,
+      welfareScheme: primaryScheme,
+    });
+  };
+
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.nameTa) {
@@ -294,9 +344,15 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
 
     const barcode = nic || id;
     const manualQr = formData.manualQrCode?.trim();
-    const qrPayload = manualQr || formData.qrPayload || `VHR-DS|ID:${id}|NIC:${nic}|DIV:${divisionCode}|MED:${formData.chronicIllness}|SCHEME:${formData.welfareScheme}`;
     const familyCode = formData.familyCode?.trim() || (formData.householdNo ? `FAM-${formData.householdNo.replace(/^HH-/, '')}` : `FAM-${divisionCode}-001`);
     const familyQrPayload = formData.familyQrPayload || `VHR-FAMILY|FAM:${familyCode}|DIV:${divisionCode}|MEMBERS_LINKED`;
+
+    const activeSchemes = formData.welfareSchemes && formData.welfareSchemes.length > 0
+      ? formData.welfareSchemes
+      : (formData.welfareScheme && formData.welfareScheme !== 'NONE' ? [formData.welfareScheme as WelfareScheme] : []);
+    const primaryWelfareScheme = activeSchemes.length > 0 ? activeSchemes[0] : 'NONE';
+
+    const qrPayload = manualQr || formData.qrPayload || `VHR-DS|ID:${id}|NIC:${nic}|DIV:${divisionCode}|MED:${formData.chronicIllness}|SCHEME:${primaryWelfareScheme}`;
 
     const recordToSave: Beneficiary = {
       id,
@@ -309,17 +365,18 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
       phone: formData.phone?.trim() || '',
       address: formData.address?.trim() || '',
       divisionCode,
-      familyHead: formData.familyHead ?? true,
+      familyHead: formData.familyHead ?? (formData.familyRelationship === 'HEAD'),
       householdNo: formData.householdNo?.trim() || `HH-${divisionCode}-001`,
       familyCode,
-      familyRelationship: (formData.familyRelationship as FamilyRelationship) || (formData.familyHead ? 'HEAD' : 'CHILD'),
-      isPregnantMother: !!formData.isPregnantMother,
+      familyRelationship: (formData.familyRelationship as FamilyRelationship) || (formData.familyHead ? 'HEAD' : 'OTHER'),
+      isPregnantMother: !!formData.isPregnantMother || activeSchemes.includes('PREGNANT_NUTRITION'),
       pregnancyStageMonths: formData.isPregnantMother ? formData.pregnancyStageMonths : undefined,
-      isPersonWithDisability: !!formData.isPersonWithDisability,
+      isPersonWithDisability: !!formData.isPersonWithDisability || activeSchemes.includes('DISABILITY'),
       disabilityType: formData.isPersonWithDisability ? formData.disabilityType : undefined,
       isWomanHeadedHousehold: !!formData.isWomanHeadedHousehold,
-      isSamurdhiBeneficiary: !!formData.isSamurdhiBeneficiary,
-      welfareScheme: (formData.welfareScheme as WelfareScheme) || 'NONE',
+      isSamurdhiBeneficiary: !!formData.isSamurdhiBeneficiary || activeSchemes.includes('SAMURDHI'),
+      welfareScheme: primaryWelfareScheme,
+      welfareSchemes: activeSchemes,
       welfareStatus: (formData.welfareStatus as WelfareStatus) || 'ACTIVE',
       chronicIllness: (formData.chronicIllness as ChronicIllness) || 'NONE',
       manualQrCode: manualQr || undefined,
@@ -334,7 +391,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
     let updated: Beneficiary[];
     if (isNewRecord) {
       updated = [recordToSave, ...beneficiaries];
-      onAuditLog('CREATE_BENEFICIARY', `Registered citizen ${recordToSave.nameEn} (ID: ${recordToSave.id}, NIC: ${recordToSave.nic}, Family: ${familyCode})`);
+      onAuditLog('CREATE_BENEFICIARY', `Registered citizen ${recordToSave.nameEn} (ID: ${recordToSave.id}, NIC: ${recordToSave.nic}, Family: ${familyCode}, Role: ${recordToSave.familyRelationship})`);
     } else {
       updated = beneficiaries.map((b) => (b.id === recordToSave.id ? recordToSave : b));
       onAuditLog('UPDATE_BENEFICIARY', `Updated citizen ${recordToSave.nameEn} (ID: ${recordToSave.id})`);
@@ -627,7 +684,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
         </div>
 
         <div className="w-full overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-xs text-slate-700">
+          <table className="w-full min-w-[840px] text-left text-xs text-slate-700">
             <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200 uppercase text-[10px] tracking-wider">
               <tr>
                 {canDelete && (
@@ -643,24 +700,29 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                 )}
                 <th className="py-3 px-3">System ID</th>
                 <th className="py-3 px-3">{t.nic}</th>
-                <th className="py-3 px-3">{t.nameTamil} / English</th>
+                <th className="py-3 px-3">{lang === 'ta' ? 'பெயர் / குடும்ப QR அலகு' : 'Name / Family Unit'}</th>
+                <th className="py-3 px-3 text-center">{lang === 'ta' ? 'உறவு (Relation)' : 'Relation'}</th>
                 <th className="py-3 px-2 text-center">{t.age}</th>
                 <th className="py-3 px-3">{t.division}</th>
                 <th className="py-3 px-3">{t.chronicIllness}</th>
-                <th className="py-3 px-3">{t.welfareScheme}</th>
+                <th className="py-3 px-3">{lang === 'ta' ? 'நலன்புரி உதவிகள் (Checklist)' : 'Welfare Aids'}</th>
                 <th className="py-3 px-3 text-right">{t.actions}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredBeneficiaries.length === 0 ? (
                 <tr>
-                  <td colSpan={canDelete ? 9 : 8} className="py-10 text-center text-slate-400">
+                  <td colSpan={canDelete ? 10 : 9} className="py-10 text-center text-slate-400">
                     {t.noData}
                   </td>
                 </tr>
               ) : (
                 filteredBeneficiaries.map((b) => {
                   const age = calculateAge(b.dob);
+                  const activeSchemes = (b.welfareSchemes && b.welfareSchemes.length > 0)
+                    ? b.welfareSchemes
+                    : (b.welfareScheme && b.welfareScheme !== 'NONE' ? [b.welfareScheme] : []);
+
                   return (
                     <tr key={b.id} className={`hover:bg-slate-50/90 transition-colors ${selectedIds.has(b.id) ? 'bg-emerald-50/50' : ''}`}>
                       {/* Selection Checkbox */}
@@ -712,11 +774,23 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                         </div>
                         <div className="text-[11px] text-slate-500">{b.nameEn}</div>
                         {b.familyCode && (
-                          <div className="text-[10px] text-emerald-800 font-mono mt-0.5 flex items-center gap-1">
-                            <span className="font-bold">QR அலகு:</span>
-                            <span>{b.familyCode}</span>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFamilyTreeCode(b.familyCode!)}
+                            className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 text-[10px] font-mono font-bold transition-all"
+                            title={lang === 'ta' ? 'இக்குடும்பத்தின் முழு மரத்தையும் காண அழுத்துக' : 'Click to view full family tree'}
+                          >
+                            <Users className="w-3 h-3 text-blue-600" />
+                            <span>QR: {b.familyCode}</span>
+                          </button>
                         )}
+                      </td>
+
+                      {/* Relationship badge */}
+                      <td className="py-3 px-3 whitespace-nowrap text-center">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-950 border border-indigo-200 shadow-2xs">
+                          {getRelationshipTamilLabel(b.familyRelationship || (b.familyHead ? 'HEAD' : 'OTHER'))}
+                        </span>
                       </td>
 
                       {/* Age with Highlight if 16 */}
@@ -755,27 +829,42 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                         )}
                       </td>
 
-                      {/* Welfare Scheme */}
+                      {/* Welfare Schemes - Multi-Aid Badges (Requirement 02) */}
                       <td className="py-3 px-3">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            b.welfareScheme.startsWith('ASWESUMA')
-                              ? 'bg-amber-100 text-amber-900'
-                              : b.welfareScheme === 'SAMURDHI'
-                              ? 'bg-emerald-100 text-emerald-900'
-                              : b.welfareScheme === 'ELDERLY'
-                              ? 'bg-blue-100 text-blue-900'
-                              : b.welfareScheme === 'CHRONIC_KIDNEY'
-                              ? 'bg-purple-100 text-purple-900'
-                              : 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {b.welfareScheme}
-                        </span>
+                        <div className="flex flex-wrap gap-1 max-w-[220px]">
+                          {activeSchemes.length === 0 ? (
+                            <span className="text-slate-400 text-[11px]">{t.schemeNone}</span>
+                          ) : (
+                            activeSchemes.map((sch) => {
+                              const def = ALL_WELFARE_SCHEMES_LIST.find((s) => s.id === sch);
+                              return (
+                                <span
+                                  key={sch}
+                                  className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold border shadow-2xs ${
+                                    def?.badgeColor || 'bg-slate-100 text-slate-800 border-slate-200'
+                                  }`}
+                                  title={def?.labelTa || sch}
+                                >
+                                  {def ? (lang === 'ta' ? def.labelTa.split('(')[0] : def.labelEn) : sch}
+                                </span>
+                              );
+                            })
+                          )}
+                        </div>
                       </td>
 
                       {/* Actions */}
                       <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
+                        {b.familyCode && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFamilyTreeCode(b.familyCode!)}
+                            className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-900 rounded font-bold text-[11px] transition-colors border border-blue-200"
+                            title={lang === 'ta' ? 'குடும்ப அலகு பார்வை (Family Tree)' : 'Family Tree'}
+                          >
+                            👨‍👩‍👧‍👦 {lang === 'ta' ? 'குடும்பம்' : 'Family'}
+                          </button>
+                        )}
                         <button
                           onClick={() => handleOpenStatusModal(b)}
                           className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded font-medium text-[11px] transition-colors border border-amber-200"
@@ -1202,41 +1291,146 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                 </select>
               </div>
 
-              {/* Restructured Welfare & Status */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    {t.welfareScheme}
-                  </label>
-                  <select
-                    value={formData.welfareScheme || 'NONE'}
-                    onChange={(e) => setFormData({ ...formData, welfareScheme: e.target.value as WelfareScheme })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white font-medium"
-                  >
-                    <option value="NONE">{t.schemeNone}</option>
-                    <option value="ASWESUMA_EXTREME">{t.schemeAswesumaExtreme}</option>
-                    <option value="ASWESUMA_POOR">{t.schemeAswesumaPoor}</option>
-                    <option value="ASWESUMA_VULNERABLE">{t.schemeAswesumaVulnerable}</option>
-                    <option value="ASWESUMA_TRANSITIONAL">{t.schemeAswesumaTransitional}</option>
-                    <option value="SAMURDHI">{t.schemeSamurdhi}</option>
-                    <option value="ELDERLY">{t.schemeElderly}</option>
-                    <option value="DISABILITY">{t.schemeDisability}</option>
-                    <option value="CHRONIC_KIDNEY">{t.schemeChronicKidney}</option>
-                    <option value="FARMER_SUBSIDY">{t.schemeFarmer}</option>
-                    <option value="FISHERY_AID">{t.schemeFishery}</option>
-                    <option value="DISASTER_RELIEF">{t.schemeDisaster}</option>
-                    <option value="SELF_EMPLOYMENT">{t.schemeSelfEmployment}</option>
-                  </select>
+              {/* Family QR Code & Relationship Section (Requirement 03) */}
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-blue-950 text-xs flex items-center gap-1.5">
+                    <span>👨‍👩‍👧‍👦</span>
+                    <span>{lang === 'ta' ? 'குடும்ப அலகு & பொதுவான கிவ் ஆர் (Family Unit & Common QR)' : 'Family Unit & Common QR'}</span>
+                  </div>
+                  <span className="text-[10px] bg-blue-200 text-blue-900 font-mono font-bold px-2 py-0.5 rounded">
+                    {lang === 'ta' ? 'பொது அலகு' : 'Shared Unit'}
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    {t.welfareStatus}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-blue-950 mb-1">
+                      {lang === 'ta' ? 'குடும்ப QR எண் (Family Master Code):' : 'Family Master QR Code:'} *
+                    </label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        required
+                        value={formData.familyCode || ''}
+                        onChange={(e) => setFormData({ ...formData, familyCode: e.target.value.trim().toUpperCase() })}
+                        placeholder="e.g. FAM-211-102"
+                        className="w-full px-3 py-1.5 text-xs border border-blue-300 rounded-lg font-mono font-bold text-blue-950 bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const div = formData.divisionCode || '211';
+                          setFormData({ ...formData, familyCode: `FAM-${div}-${Math.floor(Math.random() * 800 + 100)}` });
+                        }}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg whitespace-nowrap shadow-xs"
+                        title={lang === 'ta' ? 'புதிய எண் ஒதுக்கு' : 'Generate Code'}
+                      >
+                        🎲 {lang === 'ta' ? 'புதிய எண்' : 'New'}
+                      </button>
+                    </div>
+                    <span className="text-[10px] text-blue-800 mt-1 block">
+                      ℹ️ {lang === 'ta' ? 'குடும்பத்தின் தாய், தந்தை, பிள்ளைகள் அனைவருக்கும் இந்த ஒரே QR எண் பகிர்வதால் ஒரு குடும்பமாக பார்க்க முடியும்.' : 'Shared family QR code links all members together.'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-blue-950 mb-1">
+                      {lang === 'ta' ? 'குடும்ப உறவு நிலை (Family Relationship):' : 'Relationship to Family:'} *
+                    </label>
+                    <select
+                      value={formData.familyRelationship || 'HEAD'}
+                      onChange={(e) => {
+                        const rel = e.target.value as FamilyRelationship;
+                        setFormData({
+                          ...formData,
+                          familyRelationship: rel,
+                          familyHead: rel === 'HEAD' || rel === 'FATHER' || rel === 'MOTHER' ? formData.familyHead : false,
+                        });
+                      }}
+                      className="w-full px-3 py-2 text-xs border border-blue-300 rounded-lg bg-white font-bold text-slate-800"
+                    >
+                      {FAMILY_RELATIONSHIP_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.icon} {lang === 'ta' ? opt.labelTa : opt.labelEn}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      {lang === 'ta' ? 'குடும்ப மரம் மற்றும் பட்டியலில் உறவு நிலையை காட்ட பயன்படும்.' : 'Displays relation in family tree and roster.'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Requirement 02: Multi-Welfare Assistance Checklist (செக் லிஸ்ட்) */}
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-lg space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <div>
+                    <label className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                      <span>📋</span>
+                      <span>{lang === 'ta' ? 'நலன்புரி உதவிகள் செக் லிஸ்ட் (Welfare Aids Checklist):' : 'Welfare Assistance Checklist:'}</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-800 block">
+                      {lang === 'ta' ? 'ஒருவர் பல நலன்புரி உதவிகளையும் பெறலாம் (அனைத்தையும் தேர்வு செய்யலாம்)' : 'Citizen can receive multiple concurrent aids.'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-mono font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded">
+                      {(formData.welfareSchemes || []).length} {lang === 'ta' ? 'உதவிகள்' : 'Aids'}
+                    </span>
+                    {(formData.welfareSchemes || []).length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, welfareSchemes: [], welfareScheme: 'NONE' })}
+                        className="text-[10px] text-red-600 hover:underline font-bold"
+                      >
+                        {lang === 'ta' ? 'நீக்கு' : 'Clear'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Checklist Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1.5 bg-white rounded-lg border border-emerald-200">
+                  {ALL_WELFARE_SCHEMES_LIST.map((scheme) => {
+                    const isChecked = (formData.welfareSchemes || []).includes(scheme.id);
+                    return (
+                      <label
+                        key={scheme.id}
+                        className={`flex items-start gap-2 p-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                          isChecked
+                            ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-950 shadow-2xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleWelfareScheme(scheme.id)}
+                          className="mt-0.5 rounded text-emerald-700 focus:ring-emerald-600"
+                        />
+                        <div className="min-w-0 flex-1 leading-snug">
+                          <div className="text-[11px] truncate">
+                            {lang === 'ta' ? scheme.labelTa : scheme.labelEn}
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-normal">
+                            {scheme.category === 'ASWESUMA' ? 'அஸ்வெசும' : scheme.category === 'SPECIAL' ? 'விசேட நலன்புரி' : 'வாழ்வாதாரம்'}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-emerald-900">
+                    {t.welfareStatus}:
                   </label>
                   <select
                     value={formData.welfareStatus || 'ACTIVE'}
                     onChange={(e) => setFormData({ ...formData, welfareStatus: e.target.value as WelfareStatus })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
+                    className="px-2.5 py-1 text-xs border border-emerald-300 rounded-lg bg-white font-medium"
                   >
                     <option value="ACTIVE">{t.statusActive}</option>
                     <option value="PENDING">{t.statusPending}</option>
@@ -1307,12 +1501,12 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                 <input
                   type="checkbox"
                   id="familyHeadCheck"
-                  checked={formData.familyHead ?? true}
+                  checked={formData.familyHead ?? (formData.familyRelationship === 'HEAD')}
                   onChange={(e) => setFormData({ ...formData, familyHead: e.target.checked })}
                   className="rounded text-emerald-700 focus:ring-emerald-600"
                 />
-                <label htmlFor="familyHeadCheck" className="text-xs text-slate-700">
-                  {t.familyHead} (குடும்பத் தலைவர்)
+                <label htmlFor="familyHeadCheck" className="text-xs text-slate-700 font-medium">
+                  {t.familyHead} (குடும்பத் தலைவர் நிலை)
                 </label>
               </div>
 
@@ -1334,6 +1528,32 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Connected Family Unit Tree Modal (Requirement 01 & 03) */}
+      {selectedFamilyTreeCode && (
+        <FamilyGroupModal
+          familyCode={selectedFamilyTreeCode}
+          allBeneficiaries={beneficiaries}
+          divisions={divisions}
+          lang={lang}
+          onClose={() => setSelectedFamilyTreeCode(null)}
+          onSelectMember={(m) => {
+            setSelectedFamilyTreeCode(null);
+            setViewingCardBeneficiary(m);
+          }}
+          onAddMemberToFamily={(famCode, divCode) => {
+            setSelectedFamilyTreeCode(null);
+            handleOpenAdd();
+            setFormData((prev) => ({
+              ...prev,
+              familyCode: famCode,
+              divisionCode: divCode,
+              familyHead: false,
+              familyRelationship: 'CHILD',
+            }));
+          }}
+        />
       )}
     </div>
   );

@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Beneficiary, GNDivision, QueueToken, AssistanceRecord } from '../types';
+import { Beneficiary, GNDivision, QueueToken, AssistanceRecord, ALL_WELFARE_SCHEMES_LIST } from '../types';
 import { Language, translations } from '../translations/i18n';
 import { VaharaiLogo } from './VaharaiLogo';
 import { renderBarcodeSvg, generateQrDataUrl } from '../utils/barcode';
 import { calculateAge } from '../services/storage';
+import { getRelationshipTamilLabel } from '../services/csv';
 import { Users, History, Gift, MapPin, Phone, ShieldCheck, HeartPulse, Accessibility, Calendar, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react';
 
 interface CitizenProfileModalProps {
@@ -218,8 +219,30 @@ export const CitizenProfileModal: React.FC<CitizenProfileModalProps> = ({
                   நலன்புரி & விசேட தகைமைகள் / Welfare & Schemes
                 </div>
                 <div>
-                  <span className="text-slate-500">நலத்திட்டம்:</span>{' '}
-                  <strong className="text-emerald-900 block mt-0.5">{beneficiary.welfareScheme}</strong>
+                  <span className="text-slate-500 block mb-1">நலன்புரி உதவிகள் (Welfare Checklist):</span>
+                  <div className="flex flex-wrap gap-1">
+                    {(() => {
+                      const active = (beneficiary.welfareSchemes && beneficiary.welfareSchemes.length > 0)
+                        ? beneficiary.welfareSchemes
+                        : (beneficiary.welfareScheme && beneficiary.welfareScheme !== 'NONE' ? [beneficiary.welfareScheme] : []);
+                      if (active.length === 0) {
+                        return <span className="text-slate-400 text-xs font-semibold">நலத்திட்டம் எதுவும் இல்லை</span>;
+                      }
+                      return active.map((sch) => {
+                        const def = ALL_WELFARE_SCHEMES_LIST.find((s) => s.id === sch);
+                        return (
+                          <span
+                            key={sch}
+                            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                              def?.badgeColor || 'bg-slate-100 text-slate-800 border-slate-200'
+                            }`}
+                          >
+                            {def ? (lang === 'ta' ? def.labelTa.split('(')[0] : def.labelEn) : sch}
+                          </span>
+                        );
+                      });
+                    })()}
+                  </div>
                 </div>
                 <div>
                   <span className="text-slate-500">உதவி நிலை:</span>{' '}
@@ -280,22 +303,37 @@ export const CitizenProfileModal: React.FC<CitizenProfileModalProps> = ({
 
               {familyMembers.length > 0 ? (
                 <div className="space-y-1.5 pt-1">
-                  {familyMembers.map((fm) => (
-                    <div key={fm.id} className="p-2 bg-white rounded-lg border border-blue-100 flex items-center justify-between text-xs">
-                      <div>
-                        <strong className="text-slate-900">{fm.nameTa}</strong>{' '}
-                        <span className="text-slate-500 font-mono text-[11px]">({fm.nic})</span>
-                        <div className="text-[10px] text-slate-500">
-                          {fm.familyRelationship === 'HEAD' ? 'குடும்பத் தலைவர்' : fm.familyRelationship === 'SPOUSE' ? 'மனைவி / கணவர்' : 'பிள்ளை / உறுப்பினர்'} · {calculateAge(fm.dob)} வயது
+                  {familyMembers.map((fm) => {
+                    const memberSchemes = (fm.welfareSchemes && fm.welfareSchemes.length > 0)
+                      ? fm.welfareSchemes
+                      : (fm.welfareScheme && fm.welfareScheme !== 'NONE' ? [fm.welfareScheme] : []);
+
+                    return (
+                      <div key={fm.id} className="p-2 bg-white rounded-lg border border-blue-100 flex items-center justify-between text-xs gap-2">
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <strong className="text-slate-900">{fm.nameTa}</strong>
+                            <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-indigo-50 text-indigo-900 border border-indigo-200">
+                              {getRelationshipTamilLabel(fm.familyRelationship || (fm.familyHead ? 'HEAD' : 'OTHER'))}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            NIC: {fm.nic} · {calculateAge(fm.dob)} வயது
+                          </div>
+                        </div>
+                        <div className="text-right flex flex-wrap gap-1 justify-end max-w-[180px]">
+                          {memberSchemes.map((sch) => {
+                            const def = ALL_WELFARE_SCHEMES_LIST.find((s) => s.id === sch);
+                            return (
+                              <span key={sch} className="text-[9px] font-bold text-emerald-900 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">
+                                {def ? def.labelTa.split('(')[0] : sch}
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded">
-                          {fm.welfareScheme}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-[11px] text-slate-500 italic">

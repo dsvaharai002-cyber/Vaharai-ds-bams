@@ -57,15 +57,76 @@ export type WelfareScheme =
   | 'SAMURDHI'              // சமுர்த்தி (Samurdhi)
   | 'ELDERLY'               // முதியோர் உதவிக்கொடுப்பனவு (Senior Citizen)
   | 'DISABILITY'            // மாற்றுத்திறனாளிகள் கொடுப்பனவு (Disability)
+  | 'PREGNANT_NUTRITION'    // கர்ப்பிணித் தாய்மார் போசணை முத்திரை (Maternal Nutrition Stamp)
   | 'CHRONIC_KIDNEY'        // சிறுநீரக நோயாளர் நிதி உதவி (Kidney Patient Aid)
   | 'FARMER_SUBSIDY'        // விவசாய மானியம் & உரம் (Agrarian Subsidy)
   | 'FISHERY_AID'           // கடற்றொழிலாளர் உதவி & எரிபொருள் (Fishery Aid)
   | 'DISASTER_RELIEF'       // அனர்த்த நிவாரண உலர் உணவு (Disaster Relief)
+  | 'EDUCATION_AID'         // கல்வி கற்றல் உபகரண உதவி (School Educational Aid)
   | 'SELF_EMPLOYMENT';      // சுயதொழில் வாழ்வாதார உதவி (Livelihood Grant)
 
 export type WelfareStatus = 'ACTIVE' | 'PENDING' | 'WAITLIST' | 'REJECTED';
 
-export type FamilyRelationship = 'HEAD' | 'SPOUSE' | 'CHILD' | 'PARENT' | 'OTHER';
+export type FamilyRelationship = 
+  | 'FATHER'        // தந்தை (Father)
+  | 'MOTHER'        // தாய் (Mother)
+  | 'SON'           // மகன் (Son)
+  | 'DAUGHTER'      // மகள் (Daughter)
+  | 'HUSBAND'       // கணவன் (Husband)
+  | 'WIFE'          // மனைவி (Wife)
+  | 'GRANDFATHER'   // தாத்தா (Grandfather)
+  | 'GRANDMOTHER'   // பாட்டி (Grandmother)
+  | 'GRANDSON'      // பேரன் (Grandson)
+  | 'GRANDDAUGHTER' // பேத்தி (Granddaughter)
+  | 'CAREGIVER'     // பராமரிப்பாளர் (Caregiver)
+  | 'HEAD'          // குடும்பத் தலைவர் (Head of Household)
+  | 'SPOUSE'        // துணைவர் (Spouse)
+  | 'CHILD'         // குழந்தை / பிள்ளை (Child)
+  | 'PARENT'        // பெற்றோர் (Parent)
+  | 'OTHER';        // ஏனைய உறவினர் (Other)
+
+export const FAMILY_RELATIONSHIP_OPTIONS: { value: FamilyRelationship; labelTa: string; labelEn: string; icon: string }[] = [
+  { value: 'FATHER', labelTa: 'தந்தை (Father)', labelEn: 'Father', icon: '👨' },
+  { value: 'MOTHER', labelTa: 'தாய் (Mother)', labelEn: 'Mother', icon: '👩' },
+  { value: 'SON', labelTa: 'மகன் (Son)', labelEn: 'Son', icon: '👦' },
+  { value: 'DAUGHTER', labelTa: 'மகள் (Daughter)', labelEn: 'Daughter', icon: '👧' },
+  { value: 'HUSBAND', labelTa: 'கணவன் (Husband)', labelEn: 'Husband', icon: '👨' },
+  { value: 'WIFE', labelTa: 'மனைவி (Wife)', labelEn: 'Wife', icon: '👩' },
+  { value: 'GRANDFATHER', labelTa: 'தாத்தா (Grandfather)', labelEn: 'Grandfather', icon: '👴' },
+  { value: 'GRANDMOTHER', labelTa: 'பாட்டி (Grandmother)', labelEn: 'Grandmother', icon: '👵' },
+  { value: 'GRANDSON', labelTa: 'பேரன் (Grandson)', labelEn: 'Grandson', icon: '👦' },
+  { value: 'GRANDDAUGHTER', labelTa: 'பேத்தி (Granddaughter)', labelEn: 'Granddaughter', icon: '👧' },
+  { value: 'HEAD', labelTa: 'குடும்பத் தலைவர் (Head)', labelEn: 'Family Head', icon: '👑' },
+  { value: 'CAREGIVER', labelTa: 'பராமரிப்பாளர் (Caregiver)', labelEn: 'Caregiver', icon: '🤝' },
+  { value: 'OTHER', labelTa: 'ஏனைய உறவினர் (Other Relative)', labelEn: 'Other Relative', icon: '👥' },
+];
+
+export interface WelfareSchemeItem {
+  id: WelfareScheme;
+  code: WelfareScheme;
+  labelTa: string;
+  labelEn: string;
+  category: string;
+  badgeColor: string;
+  badgeClass: string;
+}
+
+export const ALL_WELFARE_SCHEMES_LIST: WelfareSchemeItem[] = [
+  { id: 'ASWESUMA_EXTREME', code: 'ASWESUMA_EXTREME', labelTa: 'அஸ்வெசும - மிக ஏழ்மை (Extreme Poverty)', labelEn: 'Aswesuma Extreme Poverty', category: 'ASWESUMA', badgeColor: 'bg-red-100 text-red-800 border-red-200', badgeClass: 'bg-red-100 text-red-800 border-red-200' },
+  { id: 'ASWESUMA_POOR', code: 'ASWESUMA_POOR', labelTa: 'அஸ்வெசும - ஏழ்மை (Poverty)', labelEn: 'Aswesuma Poor', category: 'ASWESUMA', badgeColor: 'bg-orange-100 text-orange-800 border-orange-200', badgeClass: 'bg-orange-100 text-orange-800 border-orange-200' },
+  { id: 'ASWESUMA_VULNERABLE', code: 'ASWESUMA_VULNERABLE', labelTa: 'அஸ்வெசும - இடர்படக்கூடியோர் (Vulnerable)', labelEn: 'Aswesuma Vulnerable', category: 'ASWESUMA', badgeColor: 'bg-amber-100 text-amber-800 border-amber-200', badgeClass: 'bg-amber-100 text-amber-800 border-amber-200' },
+  { id: 'ASWESUMA_TRANSITIONAL', code: 'ASWESUMA_TRANSITIONAL', labelTa: 'அஸ்வெசும - இடைக்கால உதவி (Transitional)', labelEn: 'Aswesuma Transitional', category: 'ASWESUMA', badgeColor: 'bg-yellow-100 text-yellow-800 border-yellow-200', badgeClass: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
+  { id: 'SAMURDHI', code: 'SAMURDHI', labelTa: 'சமுர்த்தி கொடுப்பனவு (Samurdhi)', labelEn: 'Samurdhi Allowance', category: 'SAMURDHI', badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  { id: 'ELDERLY', code: 'ELDERLY', labelTa: 'முதியோர் உதவிக்கொடுப்பனவு (Senior Citizen)', labelEn: 'Senior Citizen Allowance', category: 'ELDERLY', badgeColor: 'bg-purple-100 text-purple-800 border-purple-200', badgeClass: 'bg-purple-100 text-purple-800 border-purple-200' },
+  { id: 'DISABILITY', code: 'DISABILITY', labelTa: 'மாற்றுத்திறனாளிகள் கொடுப்பனவு (Disability)', labelEn: 'Disability Allowance', category: 'DISABILITY', badgeColor: 'bg-blue-100 text-blue-800 border-blue-200', badgeClass: 'bg-blue-100 text-blue-800 border-blue-200' },
+  { id: 'PREGNANT_NUTRITION', code: 'PREGNANT_NUTRITION', labelTa: 'கர்ப்பிணித் தாய்மார் போசணை முத்திரை (Nutrition Stamp)', labelEn: 'Pregnant Mother Nutrition Stamp', category: 'MATERNITY', badgeColor: 'bg-pink-100 text-pink-800 border-pink-200', badgeClass: 'bg-pink-100 text-pink-800 border-pink-200' },
+  { id: 'CHRONIC_KIDNEY', code: 'CHRONIC_KIDNEY', labelTa: 'சிறுநீரக நோயாளர் நிதி உதவி (Kidney Patient Aid)', labelEn: 'Chronic Kidney Disease Aid', category: 'HEALTH', badgeColor: 'bg-rose-100 text-rose-800 border-rose-200', badgeClass: 'bg-rose-100 text-rose-800 border-rose-200' },
+  { id: 'FARMER_SUBSIDY', code: 'FARMER_SUBSIDY', labelTa: 'விவசாய மானியம் & உரம் (Agrarian Subsidy)', labelEn: 'Farmer Fertilizer & Agri Subsidy', category: 'LIVELIHOOD', badgeColor: 'bg-lime-100 text-lime-800 border-lime-200', badgeClass: 'bg-lime-100 text-lime-800 border-lime-200' },
+  { id: 'FISHERY_AID', code: 'FISHERY_AID', labelTa: 'கடற்றொழிலாளர் உதவி & மண்ணெண்ணெய் (Fishery Aid)', labelEn: 'Fishery Fuel & Equipment Aid', category: 'LIVELIHOOD', badgeColor: 'bg-cyan-100 text-cyan-800 border-cyan-200', badgeClass: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
+  { id: 'DISASTER_RELIEF', code: 'DISASTER_RELIEF', labelTa: 'அனர்த்த நிவாரண உலர் உணவு (Disaster Relief)', labelEn: 'Disaster Emergency Relief', category: 'EMERGENCY', badgeColor: 'bg-slate-100 text-slate-800 border-slate-200', badgeClass: 'bg-slate-100 text-slate-800 border-slate-200' },
+  { id: 'EDUCATION_AID', code: 'EDUCATION_AID', labelTa: 'கல்வி கற்றல் உபகரண உதவி (School Stationery Aid)', labelEn: 'School Educational Aid', category: 'EDUCATION', badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200', badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+  { id: 'SELF_EMPLOYMENT', code: 'SELF_EMPLOYMENT', labelTa: 'சுயதொழில் வாழ்வாதார உதவி (Livelihood Grant)', labelEn: 'Self-Employment Livelihood Grant', category: 'LIVELIHOOD', badgeColor: 'bg-teal-100 text-teal-800 border-teal-200', badgeClass: 'bg-teal-100 text-teal-800 border-teal-200' },
+];
 
 export type CitizenStatus = 'ACTIVE' | 'DECEASED' | 'TRANSFERRED';
 
@@ -102,7 +163,7 @@ export interface Beneficiary {
   disabilityType?: string; // ஊனத்தின் வகை / தன்மை
   disabilityNature?: string; // அங்கவீனத்தின் தன்மை (உடல் ஊனம், பார்வை, கேள்வி/பேச்சு, உள நலம், பலதரப்பட்ட)
   disabilityCause?: DisabilityCause; // உருவானது: விபத்து, பிறப்பு, யுத்தம், நோய், ஏனையவை
-   disabilityRegistrationDate?: string;
+  disabilityRegistrationDate?: string;
   isWomanHeadedHousehold?: boolean; // பெண் தலைமைத்துவ குடும்பம்
   isSamurdhiBeneficiary?: boolean; // சமுர்த்தி பயனாளி
   isElderly?: boolean; // முதியோர் (Senior Citizen)
@@ -112,7 +173,8 @@ export interface Beneficiary {
   elderlyCaretakerPhone?: string; // பராமரிப்பாளர் தொலைபேசி
   elderlyMobilityStatus?: 'NORMAL' | 'WALKER_CANE' | 'WHEELCHAIR' | 'BEDRIDDEN'; // இயங்குதிறன்
   manualQrCode?: string; // பயனரால் சுயமாக வழங்கப்படும் QR / அட்டை குறியீடு (Manual QR provided by officers)
-  welfareScheme: WelfareScheme;
+  welfareScheme: WelfareScheme; // Primary scheme (for backwards compatibility)
+  welfareSchemes?: WelfareScheme[]; // Multiple welfare aid checklist (Requirement 02)
   welfareStatus: WelfareStatus;
   chronicIllness: ChronicIllness;
   barcode: string; // Barcode representation of NIC or System ID
@@ -283,6 +345,9 @@ export interface PregnantMotherRecord {
   nic: string; // தேசிய அடையாள அட்டை இலக்கம்
   divisionCode: string; // கிராம உத்தியோகத்தர் பிரிவு
   phone: string; // தொலைபேசி
+  familyCode?: string; // குடும்ப QR / குறியீடு (Family Code)
+  familyRelationship?: FamilyRelationship; // தாய் / மனைவி / etc.
+  welfareSchemes?: WelfareScheme[]; // பல நலன்புரி உதவிகள் (Checklist)
   registrationDate: string; // பதிவு செய்த திகதி (YYYY-MM-DD)
   expectedCompletionDate: string; // முடிவடையும் திகதி 10 மாதங்களின் பின் (YYYY-MM-DD)
   stampIssueDate?: string; // முத்திரை வழங்கப்பட்ட திகதி

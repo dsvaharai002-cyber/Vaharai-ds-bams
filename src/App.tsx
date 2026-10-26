@@ -709,11 +709,13 @@ export default function App() {
             users={users}
             divisions={divisions}
             assistanceRecords={assistanceRecords}
+            pregnantMothers={pregnantMothers}
             currentUser={currentUser}
             lang={lang}
             onUpdateBeneficiaries={handleUpdateBeneficiaries}
             onUpdateUsers={handleUpdateUsers}
             onUpdateAssistanceRecords={handleUpdateAssistanceRecords}
+            onUpdatePregnantMothers={handleUpdatePregnantMothers}
             onAuditLog={handleAuditLog}
           />
         )}

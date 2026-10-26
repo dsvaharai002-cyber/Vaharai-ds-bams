@@ -1,9 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import { Beneficiary, GNDivision, User, DisabilityCause } from '../types';
+import {
+  Beneficiary,
+  GNDivision,
+  User,
+  DisabilityCause,
+  FamilyRelationship,
+  WelfareScheme,
+  FAMILY_RELATIONSHIP_OPTIONS,
+  ALL_WELFARE_SCHEMES_LIST,
+} from '../types';
 import { Language, translations } from '../translations/i18n';
 import { parseSriLankanNic } from '../utils/nicParser';
 import { calculateAge, generateSystemCitizenId, generateUniqueFamilyCode, generateUniqueFamilyQrPayload } from '../services/storage';
-import { downloadCsvFile, parseCsvContent, escapeCsv } from '../services/csv';
+import { downloadCsvFile, parseCsvContent, escapeCsv, getRelationshipTamilLabel } from '../services/csv';
 import { Accessibility, Plus, Upload, Download, Search, FileText, CheckCircle2, AlertTriangle, ShieldCheck, Printer } from 'lucide-react';
 import { BeneficiaryIdCardModal } from './BeneficiaryIdCardModal';
 
@@ -68,6 +77,8 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
   const [formNature, setFormNature] = useState(DISABILITY_NATURE_OPTIONS[0].value);
   const [formCause, setFormCause] = useState<DisabilityCause>('BIRTH');
   const [formFamilyQr, setFormFamilyQr] = useState('');
+  const [formFamilyRelationship, setFormFamilyRelationship] = useState<FamilyRelationship>('SON');
+  const [formWelfareSchemes, setFormWelfareSchemes] = useState<WelfareScheme[]>(['DISABILITY']);
   const [formAddress, setFormAddress] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formNotes, setFormNotes] = useState('');
@@ -84,11 +95,23 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
     }
   };
 
+  const handleToggleWelfareScheme = (scheme: WelfareScheme) => {
+    const current = new Set(formWelfareSchemes);
+    if (current.has(scheme)) {
+      current.delete(scheme);
+    } else {
+      current.add(scheme);
+    }
+    setFormWelfareSchemes(Array.from(current));
+  };
+
   const handleOpenAddModal = () => {
     const div = '211';
     const famCode = generateUniqueFamilyCode(div, Math.floor(Math.random() * 800 + 100));
     setFormDivision(div);
     setFormFamilyQr(generateUniqueFamilyQrPayload(famCode, div));
+    setFormFamilyRelationship('SON');
+    setFormWelfareSchemes(['DISABILITY']);
     setFormName('');
     setFormNic('');
     setFormNature(DISABILITY_NATURE_OPTIONS[0].value);
@@ -115,6 +138,9 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
     const gender = nicParsed.isValid && nicParsed.gender ? nicParsed.gender : 'MALE';
     const systemId = generateSystemCitizenId(formDivision, beneficiaries.length + 1);
 
+    const activeSchemes = formWelfareSchemes.length > 0 ? formWelfareSchemes : ['DISABILITY' as WelfareScheme];
+    const primaryScheme = activeSchemes[0] || 'DISABILITY';
+
     const newCitizen: Beneficiary = {
       id: systemId,
       nic: cleanNic,
@@ -126,15 +152,17 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
       phone: formPhone.trim(),
       address: formAddress.trim(),
       divisionCode: formDivision,
-      familyHead: false,
+      familyHead: formFamilyRelationship === 'HEAD',
       householdNo: `HH-${formDivision}-${Math.floor(Math.random() * 900 + 100)}`,
       familyCode: effectiveFamCode,
+      familyRelationship: formFamilyRelationship,
       isPersonWithDisability: true,
       disabilityType: formNature,
       disabilityNature: formNature,
       disabilityCause: formCause,
       disabilityRegistrationDate: new Date().toISOString().slice(0, 10),
-      welfareScheme: 'DISABILITY',
+      welfareScheme: primaryScheme,
+      welfareSchemes: activeSchemes,
       welfareStatus: 'ACTIVE',
       chronicIllness: 'DISABILITY_PHYSICAL',
       barcode: cleanNic,
@@ -148,7 +176,7 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
 
     const updated = [newCitizen, ...beneficiaries];
     onUpdateBeneficiaries(updated);
-    onAuditLog('REGISTER_DISABILITY', `Registered disabled citizen ${newCitizen.nameTa} (NIC: ${newCitizen.nic}, Nature: ${formNature}, Cause: ${formCause})`);
+    onAuditLog('REGISTER_DISABILITY', `Registered disabled citizen ${newCitizen.nameTa} (NIC: ${newCitizen.nic}, Nature: ${formNature}, Cause: ${formCause}, Family: ${effectiveFamCode})`);
 
     setShowAddModal(false);
     alert(lang === 'ta' ? 'மாற்றுத்திறனாளி விபரம் வெற்றிகரமாக பதிவு செய்யப்பட்டது!' : 'Disability record registered successfully!');
@@ -485,10 +513,20 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
                         {b.nic}
                       </td>
 
-                      {/* Name */}
+                      {/* Name & Family */}
                       <td className="py-3 px-3">
-                        <strong className="text-slate-900 block leading-tight">{b.nameTa}</strong>
-                        <span className="text-[10px] text-slate-500">{b.nameEn}</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <strong className="text-slate-900 leading-tight">{b.nameTa}</strong>
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
+                            {getRelationshipTamilLabel(b.familyRelationship || 'SON')}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 block">{b.nameEn}</span>
+                        {b.familyCode && (
+                          <div className="text-[10px] text-blue-800 font-mono font-bold mt-0.5">
+                            QR அலகு: {b.familyCode}
+                          </div>
+                        )}
                       </td>
 
                       {/* Age & Gender */}
@@ -569,22 +607,101 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
             </div>
 
             <form onSubmit={handleSaveDisabilityCitizen} className="p-4 sm:p-5 space-y-3 max-h-[82vh] overflow-y-auto text-xs">
-              {/* Family QR Code Field (Requirement 05) */}
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-1">
-                <label className="block text-[11px] font-bold text-blue-950">
-                  கிவ் ஆர் குறியீடு / குடும்ப அலகு QR (Family QR Payload) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="VHR-FAMILY|FAM:FAM-211-042|DIV:211|..."
-                  value={formFamilyQr}
-                  onChange={(e) => setFormFamilyQr(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-blue-300 rounded-lg font-mono bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                />
+              {/* Family QR Code & Relationship (Requirement 03) */}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold text-blue-950 flex items-center gap-1.5">
+                    <span>👨‍👩‍👧‍👦</span>
+                    <span>கிவ் ஆர் குறியீடு / குடும்ப அலகு QR (Family QR Payload) *</span>
+                  </label>
+                  <span className="text-[10px] bg-blue-200 text-blue-900 font-mono font-bold px-2 py-0.5 rounded">
+                    பொது அலகு
+                  </span>
+                </div>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    required
+                    placeholder="VHR-FAMILY|FAM:FAM-211-042|DIV:211|..."
+                    value={formFamilyQr}
+                    onChange={(e) => setFormFamilyQr(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-blue-300 rounded-lg font-mono bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const famCode = generateUniqueFamilyCode(formDivision, Math.floor(Math.random() * 800 + 100));
+                      setFormFamilyQr(generateUniqueFamilyQrPayload(famCode, formDivision));
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg whitespace-nowrap shadow-xs"
+                  >
+                    🎲 புதிய QR
+                  </button>
+                </div>
                 <span className="text-[10px] text-blue-700 block">
-                  இப்பிரதேச செயலகத்தினால் குடும்ப அலகிற்கு உருவாக்கப்பட்ட தனித்துவமான QR குறியீடு.
+                  இப்பிரதேச செயலகத்தினால் குடும்ப அலகிற்கு உருவாக்கப்பட்ட பொதுவான குடும்ப QR குறியீடு.
                 </span>
+
+                <div>
+                  <label className="block text-slate-800 font-bold mb-1">
+                    குடும்ப உறவு நிலை (Family Relationship) *
+                  </label>
+                  <select
+                    value={formFamilyRelationship}
+                    onChange={(e) => setFormFamilyRelationship(e.target.value as FamilyRelationship)}
+                    className="w-full px-3 py-2 text-xs border border-blue-300 rounded-lg bg-white font-bold text-slate-800"
+                  >
+                    {FAMILY_RELATIONSHIP_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.icon} {lang === 'ta' ? opt.labelTa : opt.labelEn}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Requirement 02: Multi-Welfare Assistance Checklist (செக் லிஸ்ட்) */}
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="font-bold text-emerald-950 flex items-center gap-1.5">
+                      <span>📋</span>
+                      <span>நலன்புரி உதவிகள் செக் லிஸ்ட் (Multi-Welfare Checklist):</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-800 block">
+                      மாற்றுத்திறனாளி கொடுப்பனவுடன் அஸ்வெசும, சமூர்த்தி, சிறுநீரக நிவாரணம் போன்ற உதவிகளையும் பெறலாம்.
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded">
+                    {formWelfareSchemes.length} உதவிகள்
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1.5 bg-white rounded-lg border border-emerald-200">
+                  {ALL_WELFARE_SCHEMES_LIST.map((scheme) => {
+                    const isChecked = formWelfareSchemes.includes(scheme.id);
+                    return (
+                      <label
+                        key={scheme.id}
+                        className={`flex items-start gap-2 p-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                          isChecked
+                            ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-950'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleWelfareScheme(scheme.id)}
+                          className="mt-0.5 rounded text-emerald-700 focus:ring-emerald-600"
+                        />
+                        <span className="text-[11px] truncate">
+                          {lang === 'ta' ? scheme.labelTa : scheme.labelEn}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Name */}

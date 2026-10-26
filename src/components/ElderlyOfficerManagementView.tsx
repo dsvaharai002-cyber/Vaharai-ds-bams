@@ -1,9 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import { Beneficiary, GNDivision, User, ChronicIllness, WelfareScheme } from '../types';
+import {
+  Beneficiary,
+  GNDivision,
+  User,
+  ChronicIllness,
+  WelfareScheme,
+  FamilyRelationship,
+  FAMILY_RELATIONSHIP_OPTIONS,
+  ALL_WELFARE_SCHEMES_LIST,
+} from '../types';
 import { Language, translations } from '../translations/i18n';
 import { parseSriLankanNic } from '../utils/nicParser';
 import { calculateAge, generateSystemCitizenId } from '../services/storage';
-import { downloadCsvFile, escapeCsv } from '../services/csv';
+import { downloadCsvFile, escapeCsv, getRelationshipTamilLabel } from '../services/csv';
 import {
   HeartHandshake,
   Plus,
@@ -70,6 +79,9 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
   const [formName, setFormName] = useState('');
   const [formNic, setFormNic] = useState('');
   const [formDivision, setFormDivision] = useState(isGramaNiladhari ? officerDivision : '211');
+  const [formFamilyCode, setFormFamilyCode] = useState('FAM-211-101');
+  const [formFamilyRelationship, setFormFamilyRelationship] = useState<FamilyRelationship>('GRANDFATHER');
+  const [formWelfareSchemes, setFormWelfareSchemes] = useState<WelfareScheme[]>(['ELDERLY']);
   const [formPhone, setFormPhone] = useState('');
   const [formAddress, setFormAddress] = useState('');
   const [formDob, setFormDob] = useState('1950-01-01');
@@ -92,15 +104,32 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
     const parsed = parseSriLankanNic(nicVal);
     if (parsed.isValid && parsed.dob) {
       setFormDob(parsed.dob);
-      if (parsed.gender) setFormGender(parsed.gender);
+      if (parsed.gender) {
+        setFormGender(parsed.gender);
+        setFormFamilyRelationship(parsed.gender === 'FEMALE' ? 'GRANDMOTHER' : 'GRANDFATHER');
+      }
     }
   };
 
+  const handleToggleWelfareScheme = (scheme: WelfareScheme) => {
+    const current = new Set(formWelfareSchemes);
+    if (current.has(scheme)) {
+      current.delete(scheme);
+    } else {
+      current.add(scheme);
+    }
+    setFormWelfareSchemes(Array.from(current));
+  };
+
   const handleOpenAddModal = () => {
+    const div = isGramaNiladhari ? officerDivision : '211';
     setEditingElderly(null);
     setFormName('');
     setFormNic('');
-    setFormDivision(isGramaNiladhari ? officerDivision : '211');
+    setFormDivision(div);
+    setFormFamilyCode(`FAM-${div}-${Math.floor(Math.random() * 800 + 100)}`);
+    setFormFamilyRelationship('GRANDMOTHER');
+    setFormWelfareSchemes(['ELDERLY']);
     setFormPhone('');
     setFormAddress('');
     setFormDob('1950-01-01');
@@ -121,6 +150,9 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
     setFormName(b.nameTa);
     setFormNic(b.nic);
     setFormDivision(b.divisionCode);
+    setFormFamilyCode(b.familyCode || `FAM-${b.divisionCode}-001`);
+    setFormFamilyRelationship(b.familyRelationship || (b.gender === 'FEMALE' ? 'GRANDMOTHER' : 'GRANDFATHER'));
+    setFormWelfareSchemes(b.welfareSchemes && b.welfareSchemes.length > 0 ? b.welfareSchemes : (b.welfareScheme && b.welfareScheme !== 'NONE' ? [b.welfareScheme] : ['ELDERLY']));
     setFormPhone(b.phone || '');
     setFormAddress(b.address || '');
     setFormDob(b.dob || '1950-01-01');
@@ -145,6 +177,10 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
 
     const cleanNic = formNic.trim() || `TNIC-${formDivision}-${new Date().getFullYear()}-${Math.floor(Math.random() * 90000 + 10000)}`;
     const systemId = editingElderly ? editingElderly.id : generateSystemCitizenId(formDivision, beneficiaries.length + 1);
+    const famCode = formFamilyCode.trim() || `FAM-${formDivision}-001`;
+
+    const activeSchemes = formWelfareSchemes.length > 0 ? formWelfareSchemes : (formAllowanceStatus === 'RECEIVING' ? ['ELDERLY' as WelfareScheme] : []);
+    const primaryScheme = activeSchemes.length > 0 ? activeSchemes[0] : 'NONE';
 
     const recordToSave: Beneficiary = {
       ...(editingElderly || {}),
@@ -158,8 +194,10 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
       phone: formPhone.trim(),
       address: formAddress.trim(),
       divisionCode: formDivision,
-      familyHead: editingElderly ? editingElderly.familyHead : false,
+      familyHead: editingElderly ? editingElderly.familyHead : (formFamilyRelationship === 'HEAD'),
       householdNo: editingElderly?.householdNo || `HH-${formDivision}-001`,
+      familyCode: famCode,
+      familyRelationship: formFamilyRelationship,
       isElderly: true,
       elderlyAllowanceStatus: formAllowanceStatus,
       elderlyLivingStatus: formLivingStatus,
@@ -167,7 +205,8 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
       elderlyCaretakerPhone: formCaretakerPhone.trim(),
       elderlyMobilityStatus: formMobilityStatus,
       chronicIllness: formChronicIllness,
-      welfareScheme: formAllowanceStatus === 'RECEIVING' ? 'ELDERLY' : (editingElderly?.welfareScheme || 'NONE'),
+      welfareScheme: primaryScheme,
+      welfareSchemes: activeSchemes,
       welfareStatus: 'ACTIVE',
       manualQrCode: formManualQr.trim() || undefined,
       barcode: cleanNic || systemId,
@@ -511,7 +550,12 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
                         <div className="text-[10px] text-slate-500">{b.id}</div>
                       </td>
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900">{b.nameTa}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-slate-900">{b.nameTa}</span>
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                            {getRelationshipTamilLabel(b.familyRelationship || (b.gender === 'FEMALE' ? 'GRANDMOTHER' : 'GRANDFATHER'))}
+                          </span>
+                        </div>
                         <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
                           <span className={`px-1.5 py-0.2 rounded font-bold ${age >= 70 ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-700'}`}>
                             {age} வயது
@@ -519,6 +563,11 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
                           <span>·</span>
                           <span>{b.gender === 'MALE' ? 'ஆண்' : 'பெண்'}</span>
                         </div>
+                        {b.familyCode && (
+                          <div className="text-[10px] text-blue-800 font-mono font-bold mt-0.5">
+                            QR அலகு: {b.familyCode}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <span className="font-mono font-bold text-emerald-900">
@@ -735,6 +784,111 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
                     onChange={(e) => setFormAddress(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                   />
+                </div>
+              </div>
+
+              {/* Requirement 03: Family QR Code & Relationship in Elderly Registration */}
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-blue-950 text-xs flex items-center gap-1.5">
+                    <span>👨‍👩‍👧‍👦</span>
+                    <span>குடும்ப அலகு & பொதுவான கிவ் ஆர் (Family Unit & Common QR Code)</span>
+                  </div>
+                  <span className="text-[10px] bg-blue-200 text-blue-900 font-mono font-bold px-2 py-0.5 rounded">
+                    பொது அலகு
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-blue-950 mb-1">
+                      குடும்ப QR எண் (Family Master Code) *
+                    </label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        required
+                        value={formFamilyCode}
+                        onChange={(e) => setFormFamilyCode(e.target.value.trim().toUpperCase())}
+                        placeholder="e.g. FAM-211-102"
+                        className="w-full px-3 py-1.5 border border-blue-300 rounded-lg font-mono font-bold text-blue-950 bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormFamilyCode(`FAM-${formDivision}-${Math.floor(Math.random() * 800 + 100)}`)}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg whitespace-nowrap shadow-xs"
+                      >
+                        🎲 புதிய எண்
+                      </button>
+                    </div>
+                    <span className="text-[10px] text-blue-800 mt-1 block">
+                      ℹ️ குடும்பத்தின் பொதுவான கிவ் ஆர் இலக்கம். தாய், தந்தை, முதியோர், பிள்ளைகள் அனைவரும் இந்த ஒரே எண்ணையே பகிர்வர்.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-blue-950 mb-1">
+                      குடும்ப உறவு நிலை (Family Relationship) *
+                    </label>
+                    <select
+                      value={formFamilyRelationship}
+                      onChange={(e) => setFormFamilyRelationship(e.target.value as FamilyRelationship)}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg bg-white font-bold text-slate-800"
+                    >
+                      {FAMILY_RELATIONSHIP_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.icon} {lang === 'ta' ? opt.labelTa : opt.labelEn}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      இயல்புநிலை: தாத்தா / பாட்டி (Grandparent / Elder)
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Requirement 02: Multi-Welfare Assistance Checklist (செக் லிஸ்ட்) */}
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="font-bold text-emerald-950 flex items-center gap-1.5">
+                      <span>📋</span>
+                      <span>நலன்புரி உதவிகள் செக் லிஸ்ட் (Multi-Welfare Checklist):</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-800 block">
+                      முதியோர் கொடுப்பனவுடன் அஸ்வெசும, நாள்பட்ட சிறுநீரக உதவி, நிவாரணம் போன்ற உதவிகளையும் பெறலாம்.
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded">
+                    {formWelfareSchemes.length} உதவிகள்
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1.5 bg-white rounded-lg border border-emerald-200">
+                  {ALL_WELFARE_SCHEMES_LIST.map((scheme) => {
+                    const isChecked = formWelfareSchemes.includes(scheme.id);
+                    return (
+                      <label
+                        key={scheme.id}
+                        className={`flex items-start gap-2 p-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                          isChecked
+                            ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-950'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleWelfareScheme(scheme.id)}
+                          className="mt-0.5 rounded text-emerald-700 focus:ring-emerald-600"
+                        />
+                        <span className="text-[11px] truncate">
+                          {lang === 'ta' ? scheme.labelTa : scheme.labelEn}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 

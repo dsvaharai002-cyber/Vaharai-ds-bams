@@ -110,8 +110,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ? [
           {
             id: 'beneficiaries',
-            title: t.navBeneficiaries,
-            subtitle: lang === 'ta' ? 'பிரஜை விபரம் & அட்டை' : 'Citizens registry',
+            title: currentUser?.role === 'DISABILITY_OFFICER'
+              ? (lang === 'ta' ? 'அங்கவீனர் பதிவேடு' : 'Disability Registry')
+              : t.navBeneficiaries,
+            subtitle: currentUser?.role === 'DISABILITY_OFFICER'
+              ? (lang === 'ta' ? 'மாற்றுத்திறனாளிகள் தளம்' : 'Disability Welfare Portal')
+              : (lang === 'ta' ? 'பிரஜை விபரம் & அட்டை' : 'Citizens registry'),
             icon: Users,
           },
         ]

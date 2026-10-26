@@ -22,7 +22,7 @@ function getQuickCounts() {
   } catch {
     // ignore
   }
-  return { citizens: 11, tokens: 0, users: 10 };
+  return { citizens: 0, tokens: 0, users: 0 };
 }
 
 export default function handler(req: any, res: any) {
@@ -49,7 +49,7 @@ export default function handler(req: any, res: any) {
       success: true,
       initialized: true,
       mode: 'vercel_serverless_fallback',
-      counts: { citizens: 11, tokens: 0, users: 10 },
+      counts: { citizens: 0, tokens: 0, users: 0 },
       message: err.message,
     });
   }

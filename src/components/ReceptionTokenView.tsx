@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { QueueToken, ServiceType, TokenStatus, Beneficiary, GNDivision, User, TokenForwardRecord, ServiceDefinition } from '../types';
+import { QueueToken, ServiceType, TokenStatus, Beneficiary, GNDivision, User, TokenForwardRecord, ServiceDefinition, AssistanceRecord } from '../types';
 import { Language, translations } from '../translations/i18n';
 import { ThermalPrintReceipt } from './ThermalPrintReceipt';
 import { VaharaiLogo } from './VaharaiLogo';
 import { CitizenProfileModal } from './CitizenProfileModal';
 import { BeneficiaryIdCardModal } from './BeneficiaryIdCardModal';
+import { OfficeLayoutModal } from './OfficeLayoutModal';
 import { generateSystemCitizenId, generateProvisionalNic, DEFAULT_SERVICES } from '../services/storage';
+import { parseSriLankanNic } from '../utils/nicParser';
 
 interface ReceptionTokenViewProps {
   tokens: QueueToken[];
   beneficiaries: Beneficiary[];
   divisions: GNDivision[];
   services?: ServiceDefinition[];
+  assistanceRecords?: AssistanceRecord[];
   currentUser?: User;
   lang: Language;
   onUpdateTokens: (tokens: QueueToken[]) => void;
@@ -27,6 +30,7 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
   beneficiaries,
   divisions,
   services,
+  assistanceRecords,
   currentUser,
   lang,
   onUpdateTokens,
@@ -40,6 +44,10 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
 
   const availableServices = (services && services.length > 0) ? services.filter((s) => s.isActive) : DEFAULT_SERVICES;
+
+  // Office Layout Blueprint Modal State (Requirement 01: 33 Counters Map)
+  const [showOfficeLayoutModal, setShowOfficeLayoutModal] = useState<boolean>(false);
+  const [repeatVisitorNotice, setRepeatVisitorNotice] = useState<string>('');
 
   // Token Issuing Form State
   const [selectedService, setSelectedService] = useState<ServiceType>(availableServices[0]?.code || 'WELFARE_SCHEME');
@@ -191,22 +199,54 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
     setOfficerToMeet(defaultOfficer);
   };
 
-  // Auto lookup citizen name if NIC matches existing beneficiary
-  const handleNicChange = (nicVal: string) => {
+  // Auto lookup citizen name if NIC matches existing beneficiary or past tokens (Requirement 03: Repeat visitor auto-fill)
+  const handleNicChange = (rawNic: string) => {
+    const nicVal = rawNic.trim().toUpperCase();
     setCitizenNic(nicVal);
-    const matched = beneficiaries.find((b) => b.nic.toLowerCase() === nicVal.trim().toLowerCase());
+
+    if (!nicVal) {
+      setRepeatVisitorNotice('');
+      return;
+    }
+
+    // 1. Try finding in registered beneficiaries
+    const matched = beneficiaries.find((b) => b.nic.toUpperCase() === nicVal);
     if (matched) {
       setCitizenName(matched.nameTa || matched.nameEn);
       setCitizenNameEn(matched.nameEn || '');
       setCitizenPhone(matched.phone || '');
       setCitizenAddress(matched.address || '');
       setCitizenFamilyCode(matched.familyCode || matched.householdNo || '');
-      setSelectedDivision(matched.divisionCode);
+      setSelectedDivision(matched.divisionCode || '211');
       setIsPregnantMother(!!matched.isPregnantMother);
       setIsPersonWithDisability(!!matched.isPersonWithDisability);
       setIsWomanHeadedHousehold(!!matched.isWomanHeadedHousehold);
       setIsSamurdhiBeneficiary(!!matched.isSamurdhiBeneficiary);
+      setRepeatVisitorNotice(
+        lang === 'ta'
+          ? `✓ 2ம்/மீண்டும் வருகை: "${matched.nameTa}" அவர்களின் முன்னைய பதிவு தரவுகள் தானாக நிரப்பப்பட்டன!`
+          : `✓ Repeat Visit: Record auto-filled for "${matched.nameEn || matched.nameTa}"!`
+      );
+      return;
     }
+
+    // 2. Try finding in past queue tokens
+    const pastToken = tokens.find((t) => t.citizenNic && t.citizenNic.toUpperCase() === nicVal);
+    if (pastToken) {
+      if (pastToken.citizenName) setCitizenName(pastToken.citizenName);
+      if (pastToken.citizenPhone) setCitizenPhone(pastToken.citizenPhone);
+      if (pastToken.citizenAddress) setCitizenAddress(pastToken.citizenAddress);
+      if (pastToken.familyCode) setCitizenFamilyCode(pastToken.familyCode);
+      if (pastToken.divisionCode) setSelectedDivision(pastToken.divisionCode);
+      setRepeatVisitorNotice(
+        lang === 'ta'
+          ? `✓ வரவேற்பக முன்னைய டோக்கன் தரவுகள் தானாக பெறப்பட்டன (${pastToken.tokenNumber})!`
+          : `✓ Auto-filled from previous token history (${pastToken.tokenNumber})!`
+      );
+      return;
+    }
+
+    setRepeatVisitorNotice('');
   };
 
   // Generate computer provisional NIC for citizen without ID card
@@ -561,7 +601,17 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setShowOfficeLayoutModal(true)}
+            className="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
+            title={lang === 'ta' ? 'அலுவலக 33 கவுண்டர் / பிரிவுகள் வரைபடம்' : 'DS Office 33 Counters Layout Blueprint'}
+          >
+            <span>🏢</span>
+            <span>{lang === 'ta' ? 'அலுவலக வரைபடம் (33 பிரிவுகள்)' : 'Office Layout (33 Rooms)'}</span>
+          </button>
+
           <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 text-xs font-semibold flex items-center gap-1.5">
             <span>⏱️ {t.waitingQueue}:</span>
             <span className="font-mono text-sm">{waitingTokens.length}</span>
@@ -848,11 +898,21 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
               </div>
               <input
                 type="text"
-                placeholder="e.g. 198421500321 or TNIC-..."
+                placeholder="e.g. 198421500321 or 842150321V"
                 value={citizenNic}
                 onChange={(e) => handleNicChange(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white"
               />
+
+              {/* Repeat Visitor Notification (Requirement 03) */}
+              {repeatVisitorNotice && (
+                <div className="mt-1.5 p-2 bg-emerald-50 border border-emerald-300 rounded text-[11px] text-emerald-950 font-semibold flex items-center justify-between">
+                  <span>{repeatVisitorNotice}</span>
+                  <span className="text-[10px] bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded font-mono font-bold">
+                    2ND VISIT AUTO-FILLED
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* 4. Citizen Name */}
@@ -870,17 +930,62 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
               />
             </div>
 
-            {/* 5. GN Division */}
+            {/* 5. Phone & Address (Requirement 03: பெயர், தேசிய அடையாள அட்டை, முகவரி, தொலைபேசி எண்) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  {lang === 'ta' ? 'தொலைபேசி எண் (Phone):' : 'Phone Number:'}
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 0771234567"
+                  value={citizenPhone}
+                  onChange={(e) => setCitizenPhone(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  {lang === 'ta' ? 'குடும்ப QR அலகுக் குறியீடு:' : 'Family QR Code:'}
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. FAM-211-042"
+                  value={citizenFamilyCode}
+                  onChange={(e) => setCitizenFamilyCode(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg font-mono font-bold text-slate-900"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">
-                {t.targetDivision}
+                {lang === 'ta' ? 'முகவரி (Address):' : 'Residential Address:'}
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. மெயின் வீதி, வாகரை"
+                value={citizenAddress}
+                onChange={(e) => setCitizenAddress(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg"
+              />
+            </div>
+
+            {/* 6. GN Division (With GENERAL / பொது option - Requirement 03) */}
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                {lang === 'ta' ? 'கிராம அலுவலர் பிரிவு (GN Division) *' : 'GN Division *'}
               </label>
               <select
                 value={selectedDivision}
                 onChange={(e) => setSelectedDivision(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white font-medium"
               >
-                {divisions.map((d) => (
+                <option value="GENERAL" className="font-bold text-purple-900 bg-purple-50">
+                  GENERAL - {lang === 'ta' ? 'பொது / வெளிப்பிரிவு (General / Outside Division)' : 'General / Outside Division'}
+                </option>
+                {divisions.filter((d) => d.code !== 'GENERAL').map((d) => (
                   <option key={d.code} value={d.code}>
                     {d.code} - {d.nameTa} ({d.nameEn})
                   </option>
@@ -1613,6 +1718,9 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
           token={selectedTokenForDetails}
           beneficiary={matchedBeneficiary}
           division={matchedDivision}
+          allBeneficiaries={beneficiaries}
+          allTokens={tokens}
+          allAssistance={assistanceRecords || []}
           lang={lang}
           onClose={() => setSelectedTokenForDetails(null)}
           onPrintCard={matchedBeneficiary ? () => setSelectedBeneficiaryForCard(matchedBeneficiary) : undefined}
@@ -1786,6 +1894,13 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
           autoPrint={false}
         />
       )}
+
+      {/* Office Blueprint Layout Modal (Requirement 01: 33 Counters Map) */}
+      <OfficeLayoutModal
+        isOpen={showOfficeLayoutModal}
+        onClose={() => setShowOfficeLayoutModal(false)}
+        lang={lang}
+      />
     </div>
   );
 };

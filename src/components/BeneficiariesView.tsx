@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Beneficiary, GNDivision, User, WelfareScheme, ChronicIllness, WelfareStatus, FamilyRelationship } from '../types';
+import { Beneficiary, GNDivision, User, WelfareScheme, ChronicIllness, WelfareStatus, FamilyRelationship, CitizenStatus } from '../types';
 import { Language, translations } from '../translations/i18n';
 import { BeneficiaryIdCardModal } from './BeneficiaryIdCardModal';
 import { PrintableFilteredReportModal } from './PrintableFilteredReportModal';
+import { DisabilityOfficerManagementView } from './DisabilityOfficerManagementView';
 import { calculateAge, generateSystemCitizenId, generateProvisionalNic } from '../services/storage';
 import { generateQrDataUrl } from '../utils/barcode';
+import { parseSriLankanNic } from '../utils/nicParser';
 
 interface BeneficiariesViewProps {
   beneficiaries: Beneficiary[];
@@ -36,17 +38,31 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
   const isWHHOfficer = currentUser.role === 'WHH_OFFICER';
   const isSamurdhiOfficer = currentUser.role === 'SAMURDHI_OFFICER';
 
+  // STRICT REQUIREMENT 05: Disability Officer dedicated view
+  if (isDisabilityOfficer) {
+    return (
+      <DisabilityOfficerManagementView
+        beneficiaries={beneficiaries}
+        divisions={divisions}
+        currentUser={currentUser}
+        lang={lang}
+        onUpdateBeneficiaries={onUpdateBeneficiaries}
+        onAuditLog={onAuditLog}
+      />
+    );
+  }
+
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDivision, setSelectedDivision] = useState<string>(isGramaNiladhari ? officerDivision : 'ALL');
   const [selectedWelfare, setSelectedWelfare] = useState<string>('ALL');
   const [selectedIllness, setSelectedIllness] = useState<string>('ALL');
   const [filterYouth16Only, setFilterYouth16Only] = useState<boolean>(false);
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'ALL' | 'ACTIVE' | 'DECEASED' | 'TRANSFERRED'>('ALL');
 
   // Specialized Category Quick Filter (ECDO, Disability, WHH, Samurdhi, Family Master)
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'PREGNANT' | 'DISABILITY' | 'WHH' | 'SAMURDHI'>(() => {
     if (isECDO) return 'PREGNANT';
-    if (isDisabilityOfficer) return 'DISABILITY';
     if (isWHHOfficer) return 'WHH';
     if (isSamurdhiOfficer) return 'SAMURDHI';
     return 'ALL';
@@ -55,6 +71,24 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
   // Family Master QR Modal State (Unified QR shared across family members)
   const [selectedFamilyForModal, setSelectedFamilyForModal] = useState<string | null>(null);
   const [familyQrDataUrl, setFamilyQrDataUrl] = useState<string>('');
+
+  // Status Change Modal State (Requirement 07: மரணப்பதிவு / பதிவுமாற்றம்)
+  const [statusModalBeneficiary, setStatusModalBeneficiary] = useState<Beneficiary | null>(null);
+  const [statusForm, setStatusForm] = useState<{
+    status: CitizenStatus;
+    deathDate: string;
+    deathCertificateNo: string;
+    transferredToDivision: string;
+    transferredDate: string;
+    notes: string;
+  }>({
+    status: 'ACTIVE',
+    deathDate: new Date().toISOString().slice(0, 10),
+    deathCertificateNo: '',
+    transferredToDivision: '',
+    transferredDate: new Date().toISOString().slice(0, 10),
+    notes: '',
+  });
 
   // Modals State
   const [viewingCardBeneficiary, setViewingCardBeneficiary] = useState<Beneficiary | null>(null);
@@ -124,6 +158,12 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
         return matchesNic || matchesId || matchesNameTa || matchesNameEn || matchesPhone || matchesHh || matchesFam;
       }
 
+      // 7. Citizen Status filter (Requirement 07: மரணப்பதிவு / பதிவுமாற்றம்)
+      if (selectedStatusFilter !== 'ALL') {
+        const currentStatus = b.status || 'ACTIVE';
+        if (currentStatus !== selectedStatusFilter) return false;
+      }
+
       return true;
     });
   }, [
@@ -136,7 +176,51 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
     selectedIllness,
     filterYouth16Only,
     searchQuery,
+    selectedStatusFilter,
   ]);
+
+  // Open Status Change Modal (மரணப்பதிவு / பதிவுமாற்றம்)
+  const handleOpenStatusModal = (b: Beneficiary) => {
+    setStatusModalBeneficiary(b);
+    setStatusForm({
+      status: b.status || 'ACTIVE',
+      deathDate: b.deathDate || new Date().toISOString().slice(0, 10),
+      deathCertificateNo: b.deathCertificateNo || '',
+      transferredToDivision: b.transferredToDivision || '',
+      transferredDate: b.transferredDate || new Date().toISOString().slice(0, 10),
+      notes: '',
+    });
+  };
+
+  const handleSaveStatusChange = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!statusModalBeneficiary) return;
+
+    const updated = beneficiaries.map((b) => {
+      if (b.id === statusModalBeneficiary.id) {
+        return {
+          ...b,
+          status: statusForm.status,
+          deathDate: statusForm.status === 'DECEASED' ? statusForm.deathDate : undefined,
+          deathCertificateNo: statusForm.status === 'DECEASED' ? statusForm.deathCertificateNo : undefined,
+          transferredToDivision: statusForm.status === 'TRANSFERRED' ? statusForm.transferredToDivision : undefined,
+          transferredDate: statusForm.status === 'TRANSFERRED' ? statusForm.transferredDate : undefined,
+          notes: statusForm.notes
+            ? `${b.notes || ''} [Status Update: ${statusForm.status} - ${statusForm.notes}]`.trim()
+            : b.notes,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return b;
+    });
+
+    onUpdateBeneficiaries(updated);
+    onAuditLog(
+      'CITIZEN_STATUS_CHANGE',
+      `Changed citizen status for ${statusModalBeneficiary.nameTa} (${statusModalBeneficiary.nic}) to ${statusForm.status}`
+    );
+    setStatusModalBeneficiary(null);
+  };
 
   // Open Add Citizen Modal with automated System ID
   const handleOpenAdd = () => {
@@ -485,6 +569,36 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
             {filterYouth16Only && <span className="ml-1 text-[10px] bg-slate-900 text-white px-1.5 py-0.2 rounded-full">Active</span>}
           </button>
         </div>
+
+        {/* Requirement 07: Citizen Lifecycle Status Filter Tabs */}
+        <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 flex-wrap">
+          <span className="text-xs font-bold text-slate-600 mr-1">
+            {lang === 'ta' ? 'பிரஜை நிலை (Lifecycle):' : 'Citizen Status:'}
+          </span>
+          {[
+            { id: 'ALL', labelTa: 'அனைத்தும்', labelEn: 'All Records' },
+            { id: 'ACTIVE', labelTa: 'செயலில் (Active)', labelEn: 'Active' },
+            { id: 'DECEASED', labelTa: 'மரணப்பதிவு (Deceased)', labelEn: 'Deceased' },
+            { id: 'TRANSFERRED', labelTa: 'பதிவுமாற்றம் (Transferred)', labelEn: 'Transferred Out' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSelectedStatusFilter(tab.id as any)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                selectedStatusFilter === tab.id
+                  ? tab.id === 'DECEASED'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : tab.id === 'TRANSFERRED'
+                    ? 'bg-purple-800 text-white shadow-xs'
+                    : 'bg-emerald-800 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {lang === 'ta' ? tab.labelTa : tab.labelEn}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Responsive Table Container (With overflow-x-auto to prevent mobile blowout) */}
@@ -499,9 +613,14 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                 16 வயது நிரம்பியோர் பட்டியல்
               </span>
             )}
+            {selectedStatusFilter !== 'ALL' && (
+              <span className="text-[10px] bg-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded">
+                வடிகட்டி: {selectedStatusFilter}
+              </span>
+            )}
           </div>
           <span className="text-slate-500 text-[11px]">
-            {lang === 'ta' ? 'அனைவருக்கும் தானியங்கி System ID மற்றும் பார்கோட் ஒதுக்கப்பட்டுள்ளது' : 'Automated System ID & Barcode assigned'}
+            {lang === 'ta' ? 'அனைவருக்கும் தானியங்கி System ID, குடும்ப QR மற்றும் பார்கோட் ஒதுக்கப்பட்டுள்ளது' : 'System ID, Family QR & Barcode assigned'}
           </span>
         </div>
 
@@ -574,10 +693,28 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                         )}
                       </td>
 
-                      {/* Name */}
+                      {/* Name with Status and Family QR tags */}
                       <td className="py-3 px-3">
-                        <div className="font-bold text-slate-900 leading-tight">{b.nameTa}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-slate-900 leading-tight">{b.nameTa}</span>
+                          {b.status === 'DECEASED' && (
+                            <span className="px-1.5 py-0.5 bg-slate-900 text-white rounded text-[9px] font-bold">
+                              {lang === 'ta' ? 'மரணப்பதிவு' : 'Deceased'} {b.deathDate ? `(${b.deathDate})` : ''}
+                            </span>
+                          )}
+                          {b.status === 'TRANSFERRED' && (
+                            <span className="px-1.5 py-0.5 bg-purple-100 text-purple-900 border border-purple-300 rounded text-[9px] font-bold">
+                              {lang === 'ta' ? 'பதிவுமாற்றம்' : 'Transferred'} {b.transferredToDivision ? `(${b.transferredToDivision})` : ''}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-slate-500">{b.nameEn}</div>
+                        {b.familyCode && (
+                          <div className="text-[10px] text-emerald-800 font-mono mt-0.5 flex items-center gap-1">
+                            <span className="font-bold">QR அலகு:</span>
+                            <span>{b.familyCode}</span>
+                          </div>
+                        )}
                       </td>
 
                       {/* Age with Highlight if 16 */}
@@ -638,6 +775,13 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                       {/* Actions */}
                       <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
                         <button
+                          onClick={() => handleOpenStatusModal(b)}
+                          className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded font-medium text-[11px] transition-colors border border-amber-200"
+                          title={lang === 'ta' ? 'மரணப்பதிவு / பதிவுமாற்றம்' : 'Deceased / Transfer Status'}
+                        >
+                          📜 {lang === 'ta' ? 'நிலை' : 'Status'}
+                        </button>
+                        <button
                           onClick={() => setViewingCardBeneficiary(b)}
                           className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded font-medium text-[11px] transition-colors"
                           title={t.printIdCard}
@@ -694,6 +838,164 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
         />
       )}
 
+      {/* Requirement 07: Status Change Modal (மரணப்பதிவு / பதிவுமாற்றம்) */}
+      {statusModalBeneficiary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-5 sm:p-6 border border-slate-200 animate-in fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <span>📜</span>
+                  <span>{lang === 'ta' ? 'பிரஜை நிலை மாற்றம் / பதிவு விபரம்' : 'Citizen Lifecycle Status Update'}</span>
+                </h3>
+                <p className="text-xs text-slate-500 font-mono mt-0.5">
+                  {statusModalBeneficiary.nameTa} · {statusModalBeneficiary.nic}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStatusModalBeneficiary(null)}
+                className="text-slate-400 hover:text-slate-700 text-base"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStatusChange} className="mt-4 space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-slate-800 mb-1.5">
+                  {lang === 'ta' ? 'தற்போதைய நிலை (Status):' : 'Select Status:'}
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'ACTIVE', labelTa: 'செயலில்', labelEn: 'Active', bg: 'bg-emerald-700' },
+                    { id: 'DECEASED', labelTa: 'மரணப்பதிவு', labelEn: 'Deceased', bg: 'bg-slate-900' },
+                    { id: 'TRANSFERRED', labelTa: 'பதிவுமாற்றம்', labelEn: 'Transferred', bg: 'bg-purple-800' },
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setStatusForm({ ...statusForm, status: s.id as CitizenStatus })}
+                      className={`py-2 px-2 rounded-lg font-bold text-center border transition-all ${
+                        statusForm.status === s.id
+                          ? `${s.bg} text-white shadow-xs`
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {lang === 'ta' ? s.labelTa : s.labelEn}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Deceased Specific Fields */}
+              {statusForm.status === 'DECEASED' && (
+                <div className="p-3 bg-slate-50 border border-slate-300 rounded-lg space-y-2.5">
+                  <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <span>⚰️</span>
+                    <span>{lang === 'ta' ? 'மரண விபரங்கள் (Deceased Details)' : 'Deceased Information'}</span>
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      {lang === 'ta' ? 'மரணமடைந்த திகதி:' : 'Date of Death:'}
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={statusForm.deathDate}
+                      onChange={(e) => setStatusForm({ ...statusForm, deathDate: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg bg-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      {lang === 'ta' ? 'இறப்பு சான்றிதழ் இலக்கம் / குறிப்பு:' : 'Death Certificate No / Reference:'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. DC-VHR-2026-089"
+                      value={statusForm.deathCertificateNo}
+                      onChange={(e) => setStatusForm({ ...statusForm, deathCertificateNo: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg bg-white font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Transferred Out Specific Fields */}
+              {statusForm.status === 'TRANSFERRED' && (
+                <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-lg space-y-2.5">
+                  <div className="font-bold text-purple-950 text-xs flex items-center gap-1.5">
+                    <span>🚚</span>
+                    <span>{lang === 'ta' ? 'பதிவுமாற்ற விபரங்கள் (Transfer Out Details)' : 'Transfer Out Details'}</span>
+                  </div>
+                  <div>
+                    <label className="block text-purple-900 font-semibold mb-1">
+                      {lang === 'ta' ? 'மாற்றப்பட்டுச் சென்ற பிரதேச செயலகம் / கிராமம்:' : 'Transferred To DS Division / Area:'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. கோறளைப்பற்று மத்தி (வாழைச்சேனை) / மட்டக்களப்பு"
+                      value={statusForm.transferredToDivision}
+                      onChange={(e) => setStatusForm({ ...statusForm, transferredToDivision: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-purple-300 rounded-lg bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-purple-900 font-semibold mb-1">
+                      {lang === 'ta' ? 'பதிவு மாற்றம் செய்யப்பட்ட திகதி:' : 'Date of Transfer:'}
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={statusForm.transferredDate}
+                      onChange={(e) => setStatusForm({ ...statusForm, transferredDate: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-purple-300 rounded-lg bg-white font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  {lang === 'ta' ? 'அதிகாரபூர்வ குறிப்பு / காரணம்:' : 'Official Remarks:'}
+                </label>
+                <textarea
+                  rows={2}
+                  value={statusForm.notes}
+                  onChange={(e) => setStatusForm({ ...statusForm, notes: e.target.value })}
+                  placeholder={lang === 'ta' ? 'காரணம் மற்றும் கிராம அலுவலர் ஆவணக் குறிப்பு...' : 'Remarks and document references...'}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg bg-white"
+                />
+              </div>
+
+              <div className="p-2 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-900 font-medium">
+                ℹ️ {lang === 'ta'
+                  ? 'குறிப்பு: இந்நிலை மாற்றம் குடும்ப அலகு (Family QR) பதிவுகளில் இருந்து இவரை நீக்காது; ஆனால் மரணப்பதிவு/பதிவுமாற்றம் என தெளிவாக அடையாளப்படுத்தும்.'
+                  : 'Note: This keeps the family QR linkage intact while explicitly recording the deceased/transferred status.'}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setStatusModalBeneficiary(null)}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold transition-colors shadow-xs"
+                >
+                  {lang === 'ta' ? 'நிலையை சேமிக்க' : 'Save Status'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Add / Edit Citizen Modal */}
       {editingBeneficiary && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-2 sm:p-4 overflow-y-auto">
@@ -731,7 +1033,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                 </span>
               </div>
 
-              {/* NIC Section with Provisional Computer NIC toggle */}
+              {/* NIC Section with Provisional Computer NIC toggle & Auto Sri Lankan Parser */}
               <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-lg space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-800">
@@ -750,11 +1052,42 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
 
                 <input
                   type="text"
-                  placeholder="e.g. 198421500321 or TNIC-211-2026-..."
+                  placeholder="e.g. 198421500321 or 842150321V"
                   value={formData.nic || ''}
-                  onChange={(e) => setFormData({ ...formData, nic: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value.trim().toUpperCase();
+                    const parsed = parseSriLankanNic(val);
+                    if (parsed.isValid && parsed.birthDate) {
+                      setFormData((prev) => ({
+                        ...prev,
+                        nic: val,
+                        gender: parsed.gender || prev.gender,
+                        dob: parsed.birthDate || prev.dob,
+                      }));
+                    } else {
+                      setFormData((prev) => ({ ...prev, nic: val }));
+                    }
+                  }}
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white"
                 />
+
+                {/* Auto-extracted Sri Lankan NIC result */}
+                {(() => {
+                  const p = parseSriLankanNic(formData.nic || '');
+                  if (!p.isValid) return null;
+                  return (
+                    <div className="p-2 bg-emerald-50 border border-emerald-300 rounded text-[11px] text-emerald-950 flex items-center justify-between font-medium">
+                      <span>
+                        ✓ <strong>{lang === 'ta' ? 'அடையாள அட்டை கணக்கீடு:' : 'NIC Parsed:'}</strong>{' '}
+                        {p.gender === 'FEMALE' ? (lang === 'ta' ? 'பெண் (Female)' : 'Female') : (lang === 'ta' ? 'ஆண் (Male)' : 'Male')}, {p.birthDate} ({p.age} {t.yearsOld})
+                      </span>
+                      <span className="text-[10px] bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded font-mono font-bold">
+                        {p.format.toUpperCase()}
+                      </span>
+                    </div>
+                  );
+                })()}
+
                 {formData.isProvisionalNic && (
                   <div className="text-[10px] text-amber-800 font-medium">
                     ⚠️ {lang === 'ta' ? 'அடையாள அட்டை இல்லாத காரணத்தால் கணனி மூலம் தற்காலிக எண் ஒதுக்கப்பட்டுள்ளது. இது பார்கோட் மற்றும் டோக்கன் சேவைகளுக்கு செல்லுபடியாகும்.' : 'Provisional computer NIC assigned. Valid for barcode and token front desk services.'}

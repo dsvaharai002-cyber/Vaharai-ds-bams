@@ -11,6 +11,8 @@ export type Role =
   | 'WHH_OFFICER' // பெண் தலைமைத்துவ குடும்பங்கள் பதிவாளர் (Women-Headed Household Officer)
   | 'SAMURDHI_OFFICER'; // சமுர்த்தி அபிவிருத்தி உத்தியோகத்தர் (Samurdhi Development Officer)
 
+export type UserRole = Role;
+
 export interface User {
   id: string; // e.g. "123", "456", "457", "789", "1112", "555", "999", "601", "602", "603", "604"
   password: string; // Unique password
@@ -63,6 +65,10 @@ export type WelfareStatus = 'ACTIVE' | 'PENDING' | 'WAITLIST' | 'REJECTED';
 
 export type FamilyRelationship = 'HEAD' | 'SPOUSE' | 'CHILD' | 'PARENT' | 'OTHER';
 
+export type CitizenStatus = 'ACTIVE' | 'DECEASED' | 'TRANSFERRED';
+
+export type DisabilityCause = 'ACCIDENT' | 'BIRTH' | 'WAR' | 'ILLNESS' | 'OTHER';
+
 export interface Beneficiary {
   id: string; // System-generated Citizen Registration Number (e.g. "VHR-211-2026-0042")
   nic: string; // Official NIC or Computer-generated Provisional NIC (e.g. "TNIC-211-2026-84920")
@@ -73,15 +79,28 @@ export interface Beneficiary {
   dob: string;
   phone: string;
   address: string;
-  divisionCode: string; // e.g. "211"
+  divisionCode: string; // e.g. "211", "212A", etc. or "GENERAL"
   familyHead: boolean;
   householdNo: string;
   familyCode?: string; // Unified Family / Household Group ID (e.g. "FAM-211-042")
   familyRelationship?: FamilyRelationship;
+  status?: CitizenStatus; // 'ACTIVE' | 'DECEASED' (மரணப்பதிவு) | 'TRANSFERRED' (பதிவுமாற்றம்)
+  deceasedDate?: string; // திகதி
+  deathDate?: string; // திகதி (Deceased date alias)
+  deathCertificateNo?: string; // இறப்பு சான்றிதழ் இலக்கம்
+  deathRemarks?: string;
+  transferDate?: string; // மாற்றம் செய்யப்பட்ட திகதி
+  transferredDate?: string; // மாற்றம் செய்யப்பட்ட திகதி (Transfer date alias)
+  transferDestination?: string; // இடமாற்றம் செய்யப்பட்ட பிரதேசம் / மாவட்டம்
+  transferredToDivision?: string; // இடமாற்றம் செய்யப்பட்ட பிரதேசம் / மாவட்டம் (Transfer destination alias)
+  transferReason?: string; // காரணங்கள்
   isPregnantMother?: boolean; // ECDO: கர்ப்பிணித் தாய்
   pregnancyStageMonths?: number; // கர்ப்ப காலம் (மாதங்கள் 1-9)
   isPersonWithDisability?: boolean; // அங்கவீனர் / மாற்றுத்திறனாளி
-  disabilityType?: string; // ஊனத்தின் வகை (உடல் ஊனம், பார்வை, செவிப்புலன், மனநலம்)
+  disabilityType?: string; // ஊனத்தின் வகை / தன்மை
+  disabilityNature?: string; // அங்கவீனத்தின் தன்மை (உடல் ஊனம், பார்வை, கேள்வி/பேச்சு, உள நலம், பலதரப்பட்ட)
+  disabilityCause?: DisabilityCause; // உருவானது: விபத்து, பிறப்பு, யுத்தம், நோய், ஏனையவை
+  disabilityRegistrationDate?: string;
   isWomanHeadedHousehold?: boolean; // பெண் தலைமைத்துவ குடும்பம்
   isSamurdhiBeneficiary?: boolean; // சமுர்த்தி பயனாளி
   welfareScheme: WelfareScheme;
@@ -100,12 +119,13 @@ export interface ServiceDefinition {
   code: string; // e.g. "WELFARE_SCHEME", "LAND_PERMIT", "AGRI_PERMIT", etc.
   nameTa: string; // Service name in Tamil
   nameEn: string; // Service name in English
-  counterNo: number; // Counter number e.g. 1-10
+  counterNo: number; // Counter number e.g. 1-33
   prefix: string; // Token prefix e.g. "W", "L", "AG"
   defaultOfficerTa: string; // Default officer in Tamil
   defaultOfficerEn: string; // Default officer in English
   descriptionTa?: string;
   descriptionEn?: string;
+  floor?: string;
   isActive: boolean;
   isCustom?: boolean;
   createdAt: string;
@@ -126,11 +146,15 @@ export interface QueueToken {
   id: string;
   tokenNumber: string;
   serviceType: ServiceType;
-  counterNo: number;
-  officerToMeet: string; // யாரை பார்க்க வேண்டும் (Officer to Meet: e.g. "ADMIN 1", "ADMIN 2", "SUPERADMIN", etc.)
+  counterNo: number; // 01 to 33 based on office layout
+  counterName?: string;
+  floorLevel?: string; // 'Ground Floor (தரைத்தளம்)' | 'First Floor (முதலாம் மாடி)'
+  officerToMeet: string; // யாரை பார்க்க வேண்டும்
   citizenName: string;
   citizenNic: string;
-  divisionCode: string;
+  citizenAddress?: string;
+  citizenPhone?: string;
+  divisionCode: string; // GN Division code or "GENERAL" (பொது)
   status: TokenStatus;
   issuedAt: string;
   calledAt?: string;
@@ -139,12 +163,13 @@ export interface QueueToken {
   barcode: string;
   forwardedFrom?: string;
   forwardHistory?: TokenForwardRecord[];
-  servedByOfficerId?: string; // சேவையை நிறைவு செய்த உத்தியோகத்தர் ID
-  servedByOfficerName?: string; // சேவையை நிறைவு செய்த உத்தியோகத்தர் பெயர்
-  rating?: number; // சேவை திருப்தி நட்சத்திர புள்ளி (1 to 5 stars)
-  ratingFeedback?: string; // பிரஜையின் கருத்து
-  serviceDurationMinutes?: number; // சேவை எடுத்துக்கொண்ட நேரம் (நிமிடங்களில்)
+  servedByOfficerId?: string;
+  servedByOfficerName?: string;
+  rating?: number;
+  ratingFeedback?: string;
+  serviceDurationMinutes?: number;
   familyCode?: string;
+  familyQrPayload?: string;
 }
 
 export interface DriveBackupItem {

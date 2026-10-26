@@ -663,7 +663,7 @@ export const exportFamiliesToCsv = (beneficiaries: Beneficiary[]): string => {
   return lines.join('\n');
 };
 
-function escapeCsv(value: string | number): string {
+export function escapeCsv(value: string | number | undefined | null): string {
   if (value === undefined || value === null) return '""';
   const str = String(value);
   if (str.includes(',') || str.includes('"') || str.includes('\n')) {

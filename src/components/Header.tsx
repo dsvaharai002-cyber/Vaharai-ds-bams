@@ -27,6 +27,8 @@ interface HeaderProps {
   driveSyncStatus: DriveSyncStatus;
   isSyncing: boolean;
   onSaveToDriveNow: () => void;
+  onOpenStorageTransparency?: () => void;
+  onOpenOfficeLayout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -43,6 +45,8 @@ export const Header: React.FC<HeaderProps> = ({
   driveSyncStatus,
   isSyncing,
   onSaveToDriveNow,
+  onOpenStorageTransparency,
+  onOpenOfficeLayout,
 }) => {
   const t = translations[lang];
   const isNormal = currentUser?.role === 'NORMAL';
@@ -174,9 +178,33 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {/* Right Zone: Quick Barcode Action, Profile & Logout */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {currentUser ? (
             <>
+              {/* Office Layout Blueprint trigger */}
+              {onOpenOfficeLayout && !isNormal && (
+                <button
+                  onClick={onOpenOfficeLayout}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 rounded-lg text-xs font-semibold transition-colors"
+                  title={lang === 'ta' ? 'அலுவலக 33 கவுண்டர் / பிரிவுகள் வரைபடம்' : '33 Office Counters Map'}
+                >
+                  <span>🏢</span>
+                  <span className="hidden lg:inline">{lang === 'ta' ? 'வரைபடம்' : 'Layout'}</span>
+                </button>
+              )}
+
+              {/* Storage Transparency trigger (Requirement 08: தரவுகள் எங்கு சேமிக்கப்படுகிறது?) */}
+              {onOpenStorageTransparency && !isNormal && (
+                <button
+                  onClick={onOpenStorageTransparency}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-lg text-xs font-semibold transition-colors"
+                  title={lang === 'ta' ? 'தரவுகள் எங்கு சேமிக்கப்படுகின்றன என்ற விபரம்' : 'Where data is stored transparency'}
+                >
+                  <span>💾</span>
+                  <span className="hidden lg:inline">{lang === 'ta' ? 'சேமிப்பு' : 'Storage'}</span>
+                </button>
+              )}
+
               {/* Quick Scanner Action button */}
               {!isNormal && (
                 <button

@@ -50,6 +50,8 @@ import { ServiceAuditView } from './components/ServiceAuditView';
 import { AssistanceDistributionView } from './components/AssistanceDistributionView';
 import { ServiceManagementView } from './components/ServiceManagementView';
 import { BarcodeScannerModal } from './components/BarcodeScannerModal';
+import { StorageTransparencyModal } from './components/StorageTransparencyModal';
+import { OfficeLayoutModal } from './components/OfficeLayoutModal';
 import { Sidebar } from './components/Sidebar';
 
 export default function App() {
@@ -77,6 +79,10 @@ export default function App() {
 
   // Quick Barcode Scanner Modal
   const [showScanner, setShowScanner] = useState<boolean>(false);
+
+  // Office Layout Blueprint & Storage Transparency Modals
+  const [showStorageModal, setShowStorageModal] = useState<boolean>(false);
+  const [showOfficeLayoutModal, setShowOfficeLayoutModal] = useState<boolean>(false);
 
   // Restore active user session if exists
   useEffect(() => {
@@ -461,6 +467,11 @@ export default function App() {
         lang={lang}
         setLang={setLang}
         onLoginSuccess={handleLoginSuccess}
+        onRegisterUser={(newUser: User) => {
+          const updated = [...users, newUser];
+          handleUpdateUsers(updated);
+          handleLoginSuccess(newUser);
+        }}
       />
     );
   }
@@ -507,6 +518,8 @@ export default function App() {
         driveSyncStatus={driveSyncStatus}
         isSyncing={isManualSyncing}
         onSaveToDriveNow={handleSaveToDriveNow}
+        onOpenStorageTransparency={() => setShowStorageModal(true)}
+        onOpenOfficeLayout={() => setShowOfficeLayoutModal(true)}
       />
 
       {/* Floating Status / Sync Toast */}
@@ -568,6 +581,7 @@ export default function App() {
             beneficiaries={beneficiaries}
             divisions={divisions}
             services={services}
+            assistanceRecords={assistanceRecords}
             currentUser={currentUser}
             lang={lang}
             onUpdateTokens={handleUpdateTokens}
@@ -692,6 +706,20 @@ export default function App() {
           onClose={() => setShowScanner(false)}
         />
       )}
+
+      {/* Storage Transparency Modal (Requirement 08) */}
+      <StorageTransparencyModal
+        isOpen={showStorageModal}
+        onClose={() => setShowStorageModal(false)}
+        lang={lang}
+      />
+
+      {/* Office Layout Blueprint Modal (Requirement 01: 33 Counters Map) */}
+      <OfficeLayoutModal
+        isOpen={showOfficeLayoutModal}
+        onClose={() => setShowOfficeLayoutModal(false)}
+        lang={lang}
+      />
 
       {/* Official Civic Footer */}
       <footer className="bg-white border-t border-slate-200 py-4 px-4 sm:px-6 text-center text-xs text-slate-500 no-print w-full overflow-x-hidden">

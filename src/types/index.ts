@@ -7,6 +7,8 @@ export type Role =
   | 'Reception Registrar' 
   | 'NORMAL' // Dedicated role for Public Live Counter Display TV screen
   | 'ECDO' // Early Childhood Development Officer (கர்ப்பிணித் தாய்மார்கள் பதிவாளர்)
+  | 'MATERNITY_OFFICER' // கர்ப்பிணித் தாய்மார்கள் & முத்திரை பதிவாளர் (Pregnant Mothers & Nutrition Stamps Officer)
+  | 'ELDERLY_OFFICER' // முதியோர் நலன்புரி உத்தியோகத்தர் (Senior Citizens Welfare Officer)
   | 'DISABILITY_OFFICER' // அங்கவீனர் பதிவாளர் (Disability Rights Officer)
   | 'WHH_OFFICER' // பெண் தலைமைத்துவ குடும்பங்கள் பதிவாளர் (Women-Headed Household Officer)
   | 'SAMURDHI_OFFICER'; // சமுர்த்தி அபிவிருத்தி உத்தியோகத்தர் (Samurdhi Development Officer)
@@ -100,9 +102,16 @@ export interface Beneficiary {
   disabilityType?: string; // ஊனத்தின் வகை / தன்மை
   disabilityNature?: string; // அங்கவீனத்தின் தன்மை (உடல் ஊனம், பார்வை, கேள்வி/பேச்சு, உள நலம், பலதரப்பட்ட)
   disabilityCause?: DisabilityCause; // உருவானது: விபத்து, பிறப்பு, யுத்தம், நோய், ஏனையவை
-  disabilityRegistrationDate?: string;
+   disabilityRegistrationDate?: string;
   isWomanHeadedHousehold?: boolean; // பெண் தலைமைத்துவ குடும்பம்
   isSamurdhiBeneficiary?: boolean; // சமுர்த்தி பயனாளி
+  isElderly?: boolean; // முதியோர் (Senior Citizen)
+  elderlyAllowanceStatus?: 'RECEIVING' | 'WAITLIST' | 'NOT_APPLIED'; // முதியோர் கொடுப்பனவு நிலை
+  elderlyLivingStatus?: 'WITH_FAMILY' | 'ALONE' | 'ELDER_CARE_HOME'; // வசிக்கும் நிலை
+  elderlyCaretakerName?: string; // பராமரிப்பாளர் பெயர்
+  elderlyCaretakerPhone?: string; // பராமரிப்பாளர் தொலைபேசி
+  elderlyMobilityStatus?: 'NORMAL' | 'WALKER_CANE' | 'WHEELCHAIR' | 'BEDRIDDEN'; // இயங்குதிறன்
+  manualQrCode?: string; // பயனரால் சுயமாக வழங்கப்படும் QR / அட்டை குறியீடு (Manual QR provided by officers)
   welfareScheme: WelfareScheme;
   welfareStatus: WelfareStatus;
   chronicIllness: ChronicIllness;
@@ -257,3 +266,35 @@ export interface FamilyCsvRecord {
   hasPersonWithDisability: boolean;
   notes?: string;
 }
+
+export interface MonthlyStampCollection {
+  monthIndex: number; // 1 to 10
+  monthLabelTa: string; // e.g. "மாதம் 01 (Month 1)"
+  monthLabelEn: string; // e.g. "Month 01"
+  collected: boolean;
+  collectedDate?: string;
+  collectedByOfficer?: string;
+  notes?: string;
+}
+
+export interface PregnantMotherRecord {
+  id: string; // e.g. "MAT-211-2026-001"
+  name: string; // பெயர்
+  nic: string; // தேசிய அடையாள அட்டை இலக்கம்
+  divisionCode: string; // கிராம உத்தியோகத்தர் பிரிவு
+  phone: string; // தொலைபேசி
+  registrationDate: string; // பதிவு செய்த திகதி (YYYY-MM-DD)
+  expectedCompletionDate: string; // முடிவடையும் திகதி 10 மாதங்களின் பின் (YYYY-MM-DD)
+  stampIssueDate?: string; // முத்திரை வழங்கப்பட்ட திகதி
+  stampNumber?: string; // முத்திரை இலக்கம்
+  stampValue: number; // முத்திரையின் பெறுமதி (e.g. 4500)
+  pregnancyNumber: number; // 01, 02, 03, 04 வது குழந்தை/பிரசவம்
+  monthlyCollections: MonthlyStampCollection[]; // 10 மாதங்களும் முத்திரைக்கான பொருளை பெற்றதை அடையாளமிடும் இடம்
+  isCompleted: boolean; // 10 மாதங்கள் அடையாளம் இட்ட பின் முடிவு பகுதிக்கு செல்லும் வசதி
+  completedDate?: string;
+  status: 'WAITING_STAMP' | 'ACTIVE_COLLECTING' | 'COMPLETED'; // காத்திருப்பு வரிசை / பொருட்கள் பெறும் நிலை / முடிவுற்றவை
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+

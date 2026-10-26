@@ -24,6 +24,9 @@ import {
   ChevronRight,
   ExternalLink,
   ShieldAlert,
+  Search,
+  HeartHandshake,
+  Baby,
 } from 'lucide-react';
 import { DriveSyncStatus } from '../services/googleDrive';
 
@@ -65,16 +68,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isAdmin = currentUser?.role === 'ADMIN 1' || currentUser?.role === 'ADMIN 2' || isSuperAdmin;
   const isReception = currentUser?.role === 'Reception Registrar';
   const isNormal = currentUser?.role === 'NORMAL';
+  const isGramaNiladhari = currentUser?.role === 'GRAMANIILATHARI';
+  const isElderlyOfficer = currentUser?.role === 'ELDERLY_OFFICER';
+  const isMaternityOfficer = currentUser?.role === 'MATERNITY_OFFICER' || currentUser?.role === 'ECDO';
+  const isDisabilityOfficer = currentUser?.role === 'DISABILITY_OFFICER';
 
   const canAccessStaff = isSuperAdmin;
   const canAccessDrive = isAdmin;
   const canAccessAi = isAdmin;
-  const canAccessBeneficiaries = !isReception && !isNormal;
+  const canAccessBeneficiaries = !isReception && !isNormal && !isElderlyOfficer && !isMaternityOfficer;
+  const canAccessElderly = isAdmin || isElderlyOfficer || isGramaNiladhari;
+  const canAccessMaternity = isAdmin || isMaternityOfficer || isGramaNiladhari;
   const canAccessCsv = (isAdmin || currentUser?.role === 'DATAENRY OFFCER') && !isNormal;
-  const canAccessDashboard = !isNormal;
-  const canAccessReception = !isNormal;
+  const canAccessDashboard = !isNormal && !isElderlyOfficer && !isMaternityOfficer;
+  const canAccessReception = !isNormal && !isElderlyOfficer && !isMaternityOfficer;
+  const canAccessUniversalSearch = !isNormal;
 
   const publicServiceItems = [
+    ...(canAccessUniversalSearch
+      ? [
+          {
+            id: 'universal-search',
+            title: lang === 'ta' ? 'பொதுவான தேடல்' : 'Universal Search',
+            subtitle: lang === 'ta' ? 'NIC / QR சகல தரவுகள்' : '360° Citizen Dossier',
+            icon: Search,
+            badge: lang === 'ta' ? 'தேடல்' : 'Search',
+          },
+        ]
+      : []),
     ...(canAccessReception
       ? [
           {
@@ -106,6 +127,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const registryItems = [
+    ...(canAccessElderly
+      ? [
+          {
+            id: 'elderly',
+            title: lang === 'ta' ? 'முதியோர் உத்தியோகத்தர்' : 'Elderly Welfare',
+            subtitle: lang === 'ta' ? '70+ கொடுப்பனவு & உதவி' : 'Senior Citizens Care',
+            icon: HeartHandshake,
+            badge: lang === 'ta' ? 'முதியோர்' : 'Elderly',
+          },
+        ]
+      : []),
+    ...(canAccessMaternity
+      ? [
+          {
+            id: 'maternity',
+            title: lang === 'ta' ? 'கர்ப்பிணித் தாய்மார்' : 'Pregnant Mothers',
+            subtitle: lang === 'ta' ? '10 மாத போசணை முத்திரை' : 'Nutrition Food Stamps',
+            icon: Baby,
+            badge: lang === 'ta' ? 'முத்திரை' : 'Maternity',
+          },
+        ]
+      : []),
     ...(canAccessBeneficiaries
       ? [
           {
@@ -120,7 +163,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           },
         ]
       : []),
-    ...(!isReception && !isNormal
+    ...(!isReception && !isNormal && !isElderlyOfficer && !isMaternityOfficer
       ? [
           {
             id: 'assistance',

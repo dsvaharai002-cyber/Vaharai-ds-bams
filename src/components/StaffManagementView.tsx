@@ -372,10 +372,13 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
                   <option value="ADMIN 1">ADMIN 1 (Administrative Officer 01 - அட்மின் 1)</option>
                   <option value="ADMIN 2">ADMIN 2 (Administrative Officer 02 - அட்மின் 2)</option>
                   <option value="SUPERADMIN">SUPERADMIN (Divisional Secretary - தலைமை நிர்வாகி)</option>
-                  <option value="NORMAL">NORMAL (Live Counter Display Screen - நோமல்)</option>
+                  <option value="ELDERLY_OFFICER">ELDERLY_OFFICER (முதியோர் நலன்புரி உத்தியோகத்தர்)</option>
+                  <option value="MATERNITY_OFFICER">MATERNITY_OFFICER (கர்ப்பிணித் தாய்மார்கள் பதிவாளர்)</option>
+                  <option value="DISABILITY_OFFICER">DISABILITY_OFFICER (மாற்றுத்திறனாளிகள் பதிவாளர்)</option>
                   <option value="GRAMANIILATHARI">GRAMANIILATHARI (Grama Niladhari - கிராம அலுவலர்)</option>
-                  <option value="DATAENRY OFFCER">DATAENRY OFFCER (Data Entry Specialist - தரவு உள்ளீட்டாளர்)</option>
                   <option value="Reception Registrar">Reception Registrar (Front Desk - வரவேற்பாளர்)</option>
+                  <option value="DATAENRY OFFCER">DATAENRY OFFCER (Data Entry Specialist - தரவு உள்ளீட்டாளர்)</option>
+                  <option value="NORMAL">NORMAL (Live Counter Display Screen - நோமல்)</option>
                 </select>
               </div>
 

@@ -293,9 +293,10 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
     }
 
     const barcode = nic || id;
-    const qrPayload = `VHR-DS|ID:${id}|NIC:${nic}|DIV:${divisionCode}|MED:${formData.chronicIllness}|SCHEME:${formData.welfareScheme}`;
+    const manualQr = formData.manualQrCode?.trim();
+    const qrPayload = manualQr || formData.qrPayload || `VHR-DS|ID:${id}|NIC:${nic}|DIV:${divisionCode}|MED:${formData.chronicIllness}|SCHEME:${formData.welfareScheme}`;
     const familyCode = formData.familyCode?.trim() || (formData.householdNo ? `FAM-${formData.householdNo.replace(/^HH-/, '')}` : `FAM-${divisionCode}-001`);
-    const familyQrPayload = `VHR-FAMILY|FAM:${familyCode}|DIV:${divisionCode}|MEMBERS_LINKED`;
+    const familyQrPayload = formData.familyQrPayload || `VHR-FAMILY|FAM:${familyCode}|DIV:${divisionCode}|MEMBERS_LINKED`;
 
     const recordToSave: Beneficiary = {
       id,
@@ -321,6 +322,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
       welfareScheme: (formData.welfareScheme as WelfareScheme) || 'NONE',
       welfareStatus: (formData.welfareStatus as WelfareStatus) || 'ACTIVE',
       chronicIllness: (formData.chronicIllness as ChronicIllness) || 'NONE',
+      manualQrCode: manualQr || undefined,
       barcode,
       qrPayload,
       familyQrPayload,
@@ -1283,6 +1285,22 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {lang === 'ta' ? 'அட்டை அடையாளக்குறி / சொந்த QR குறியீடு (Manual QR / Card Code)' : 'Manual Card QR Code / ID'}
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. CARD-VHR-8912"
+                  value={formData.manualQrCode || ''}
+                  onChange={(e) => setFormData({ ...formData, manualQrCode: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono bg-slate-50"
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">
+                  {lang === 'ta' ? 'அலுவலகத்தால் வழங்கப்படும் அட்டை அல்லது பார்கோட் குறியீட்டை இங்கு உள்ளிடலாம்.' : 'Optional: Type or scan the official physical card code.'}
+                </span>
               </div>
 
               <div className="flex items-center gap-2">

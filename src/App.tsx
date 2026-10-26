@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Beneficiary, QueueToken, GNDivision, SystemAuditLog, AssistanceRecord, ServiceDefinition } from './types';
+import { User, Beneficiary, QueueToken, GNDivision, SystemAuditLog, AssistanceRecord, ServiceDefinition, PregnantMotherRecord } from './types';
 import { Language } from './translations/i18n';
 import {
   loadUsers,
@@ -15,6 +15,8 @@ import {
   saveAssistanceRecords,
   loadServices,
   saveServices,
+  loadPregnantMothers,
+  savePregnantMothers,
   fetchCentralDatabase,
   pushToCentralDatabase,
   restoreDatabaseFromSnapshot,
@@ -49,6 +51,9 @@ import { AiReportView } from './components/AiReportView';
 import { ServiceAuditView } from './components/ServiceAuditView';
 import { AssistanceDistributionView } from './components/AssistanceDistributionView';
 import { ServiceManagementView } from './components/ServiceManagementView';
+import { ElderlyOfficerManagementView } from './components/ElderlyOfficerManagementView';
+import { PregnantMothersView } from './components/PregnantMothersView';
+import { UniversalCitizenSearchView } from './components/UniversalCitizenSearchView';
 import { BarcodeScannerModal } from './components/BarcodeScannerModal';
 import { StorageTransparencyModal } from './components/StorageTransparencyModal';
 import { OfficeLayoutModal } from './components/OfficeLayoutModal';
@@ -69,6 +74,7 @@ export default function App() {
   const [services, setServices] = useState<ServiceDefinition[]>(() => loadServices());
   const [auditLogs, setAuditLogs] = useState<SystemAuditLog[]>(() => loadAuditLogs());
   const [assistanceRecords, setAssistanceRecords] = useState<AssistanceRecord[]>(() => loadAssistanceRecords());
+  const [pregnantMothers, setPregnantMothers] = useState<PregnantMotherRecord[]>(() => loadPregnantMothers());
 
   // Cloud & Drive Sync Status State
   const [driveSyncStatus, setDriveSyncStatus] = useState<DriveSyncStatus>(() => getDriveSyncStatus());
@@ -95,6 +101,12 @@ export default function App() {
           setCurrentTab('reception');
         } else if (found.role === 'NORMAL') {
           setCurrentTab('live-display');
+        } else if (found.role === 'ELDERLY_OFFICER') {
+          setCurrentTab('elderly');
+        } else if (found.role === 'MATERNITY_OFFICER' || found.role === 'ECDO') {
+          setCurrentTab('maternity');
+        } else if (found.role === 'DISABILITY_OFFICER') {
+          setCurrentTab('beneficiaries');
         }
       }
     }
@@ -325,6 +337,11 @@ export default function App() {
     saveServices(newServices);
   };
 
+  const handleUpdatePregnantMothers = (newRecords: PregnantMotherRecord[]) => {
+    setPregnantMothers(newRecords);
+    savePregnantMothers(newRecords);
+  };
+
   const handleDatabaseReload = () => {
     setUsers(loadUsers());
     setBeneficiaries(loadBeneficiaries());
@@ -333,6 +350,7 @@ export default function App() {
     setServices(loadServices());
     setAuditLogs(loadAuditLogs());
     setAssistanceRecords(loadAssistanceRecords());
+    setPregnantMothers(loadPregnantMothers());
   };
 
   const handleQuickSyncNow = async () => {
@@ -467,11 +485,6 @@ export default function App() {
         lang={lang}
         setLang={setLang}
         onLoginSuccess={handleLoginSuccess}
-        onRegisterUser={(newUser: User) => {
-          const updated = [...users, newUser];
-          handleUpdateUsers(updated);
-          handleLoginSuccess(newUser);
-        }}
       />
     );
   }
@@ -481,25 +494,42 @@ export default function App() {
   const isAdmin = currentUser.role === 'ADMIN 1' || currentUser.role === 'ADMIN 2' || isSuperAdmin;
   const isReception = currentUser.role === 'Reception Registrar';
   const isNormal = currentUser.role === 'NORMAL'; // Dedicated Live Counter TV user
+  const isGramaNiladhari = currentUser.role === 'GRAMANIILATHARI';
+  const isElderlyOfficer = currentUser.role === 'ELDERLY_OFFICER';
+  const isMaternityOfficer = currentUser.role === 'MATERNITY_OFFICER' || currentUser.role === 'ECDO';
+  const isDisabilityOfficer = currentUser.role === 'DISABILITY_OFFICER';
 
-  const safeTab = 
-    isNormal
-      ? 'live-display'
-      : currentTab === 'staff' && !isSuperAdmin
-      ? 'dashboard'
-      : currentTab === 'services' && !isSuperAdmin
-      ? 'dashboard'
-      : currentTab === 'beneficiaries' && isReception
-      ? 'reception'
-      : currentTab === 'assistance' && (isReception || isNormal)
-      ? 'dashboard'
-      : currentTab === 'drive' && !isAdmin
-      ? 'dashboard'
-      : currentTab === 'ai-report' && !isAdmin
-      ? 'dashboard'
-      : currentTab === 'service-audit' && !isAdmin
-      ? 'dashboard'
-      : currentTab;
+  const canAccessElderly = isAdmin || isElderlyOfficer || isGramaNiladhari;
+  const canAccessMaternity = isAdmin || isMaternityOfficer || isGramaNiladhari;
+
+  let safeTab = currentTab;
+  if (isNormal) {
+    safeTab = 'live-display';
+  } else if (isElderlyOfficer && currentTab !== 'universal-search') {
+    safeTab = 'elderly';
+  } else if (isMaternityOfficer && currentTab !== 'universal-search') {
+    safeTab = 'maternity';
+  } else if (isDisabilityOfficer && currentTab !== 'universal-search') {
+    safeTab = 'beneficiaries';
+  } else if (currentTab === 'staff' && !isSuperAdmin) {
+    safeTab = 'dashboard';
+  } else if (currentTab === 'services' && !isSuperAdmin) {
+    safeTab = 'dashboard';
+  } else if (currentTab === 'beneficiaries' && isReception) {
+    safeTab = 'reception';
+  } else if (currentTab === 'assistance' && (isReception || isNormal)) {
+    safeTab = 'dashboard';
+  } else if (currentTab === 'drive' && !isAdmin) {
+    safeTab = 'dashboard';
+  } else if (currentTab === 'ai-report' && !isAdmin) {
+    safeTab = 'dashboard';
+  } else if (currentTab === 'service-audit' && !isAdmin) {
+    safeTab = 'dashboard';
+  } else if (currentTab === 'elderly' && !canAccessElderly) {
+    safeTab = 'dashboard';
+  } else if (currentTab === 'maternity' && !canAccessMaternity) {
+    safeTab = 'dashboard';
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans w-full max-w-full overflow-x-hidden">
@@ -561,6 +591,40 @@ export default function App() {
             currentUser={currentUser}
             lang={lang}
             onNavigate={(tab) => setCurrentTab(tab)}
+          />
+        )}
+
+        {safeTab === 'universal-search' && (
+          <UniversalCitizenSearchView
+            beneficiaries={beneficiaries}
+            tokens={tokens}
+            assistanceRecords={assistanceRecords}
+            pregnantMothers={pregnantMothers}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+          />
+        )}
+
+        {safeTab === 'elderly' && (
+          <ElderlyOfficerManagementView
+            beneficiaries={beneficiaries}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdateBeneficiaries={handleUpdateBeneficiaries}
+            onAuditLog={handleAuditLog}
+          />
+        )}
+
+        {safeTab === 'maternity' && (
+          <PregnantMothersView
+            pregnantMothers={pregnantMothers}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdatePregnantMothers={handleUpdatePregnantMothers}
+            onAuditLog={handleAuditLog}
           />
         )}
 

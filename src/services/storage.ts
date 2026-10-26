@@ -10,19 +10,22 @@ import {
   AssistanceRecord,
   DuplicateAidCheckResult,
   ServiceDefinition,
+  PregnantMotherRecord,
+  MonthlyStampCollection,
 } from '../types';
 import initialDatabaseSeed from '../data/central_database.json';
 import { scheduleAutoDriveSync } from './googleDrive';
 
 const STORAGE_KEYS = {
-  USERS: 'vaharai_ds_users_v5',
-  BENEFICIARIES: 'vaharai_ds_beneficiaries_v5',
-  TOKENS: 'vaharai_ds_tokens_v5',
+  USERS: 'vaharai_ds_users_v6',
+  BENEFICIARIES: 'vaharai_ds_beneficiaries_v6',
+  TOKENS: 'vaharai_ds_tokens_v6',
   DIVISIONS: 'vaharai_ds_divisions_v7',
-  AUDIT_LOGS: 'vaharai_ds_audit_logs_v5',
-  ASSISTANCE: 'vaharai_ds_assistance_v5',
-  SERVICES: 'vaharai_ds_services_v5',
-  INITIALIZED: 'vaharai_ds_initialized_v5',
+  AUDIT_LOGS: 'vaharai_ds_audit_logs_v6',
+  ASSISTANCE: 'vaharai_ds_assistance_v6',
+  SERVICES: 'vaharai_ds_services_v6',
+  PREGNANT_MOTHERS: 'vaharai_ds_pregnant_mothers_v6',
+  INITIALIZED: 'vaharai_ds_initialized_v6',
 };
 
 // Purge legacy mock data cache from previous versions so users see a completely fresh registration portal
@@ -117,8 +120,18 @@ export const getDivisionByCode = (code: string, divisions: GNDivision[] = DEFAUL
   );
 };
 
-// Clean Production Database: Zero mock accounts and zero default passwords!
-export const DEFAULT_USERS: User[] = ((initialDatabaseSeed as any)?.users as User[]) || [];
+// Clean Production Database: Sole Super Admin seeded according to official mandate
+export const INITIAL_SUPERADMIN_USER: User = {
+  id: '93008148555',
+  password: '19930108',
+  name: 'பிரதேச செயலாளர் (Super Admin)',
+  role: 'SUPERADMIN',
+  division: 'ALL',
+  status: 'ACTIVE',
+  createdAt: '2026-01-01T00:00:00Z',
+};
+
+export const DEFAULT_USERS: User[] = [INITIAL_SUPERADMIN_USER];
 
 // Clean Citizens Database: Zero mock citizens (Murugesu etc. removed)
 export const DEFAULT_BENEFICIARIES: Beneficiary[] = ((initialDatabaseSeed as any)?.beneficiaries as Beneficiary[]) || [];
@@ -378,11 +391,75 @@ export const setStoredData = <T>(key: string, data: T): void => {
 };
 
 export const loadUsers = (): User[] => {
-  return getStoredData<User[]>(STORAGE_KEYS.USERS, DEFAULT_USERS);
+  const users = getStoredData<User[]>(STORAGE_KEYS.USERS, DEFAULT_USERS);
+  // Guarantee the Super Admin 93008148555 is always present with official credentials
+  const hasSuperAdmin = users.some((u) => u.id === '93008148555');
+  if (!hasSuperAdmin) {
+    const updated = [INITIAL_SUPERADMIN_USER, ...users];
+    setStoredData(STORAGE_KEYS.USERS, updated);
+    return updated;
+  }
+  return users;
 };
 export const saveUsers = (users: User[]) => {
   setStoredData(STORAGE_KEYS.USERS, users);
   scheduleCentralSync();
+};
+
+// 10 Months Expiry & Stamp Voucher Calculations
+export const calculateTenMonthsDate = (startDateStr: string): string => {
+  if (!startDateStr) return '';
+  const date = new Date(startDateStr);
+  date.setMonth(date.getMonth() + 10);
+  return date.toISOString().slice(0, 10);
+};
+
+export const createDefaultMonthlyCollections = (): MonthlyStampCollection[] => {
+  return Array.from({ length: 10 }, (_, i) => ({
+    monthIndex: i + 1,
+    monthLabelTa: `மாதம் ${String(i + 1).padStart(2, '0')}`,
+    monthLabelEn: `Month ${String(i + 1).padStart(2, '0')}`,
+    collected: false,
+  }));
+};
+
+export const loadPregnantMothers = (): PregnantMotherRecord[] => {
+  return getStoredData<PregnantMotherRecord[]>(STORAGE_KEYS.PREGNANT_MOTHERS, []);
+};
+
+export const savePregnantMothers = (records: PregnantMotherRecord[]) => {
+  setStoredData(STORAGE_KEYS.PREGNANT_MOTHERS, records);
+  scheduleCentralSync();
+};
+
+export const checkDuplicateActivePregnantMother = (
+  nic: string,
+  currentRecordId?: string
+): { isDuplicate: boolean; existingRecord?: PregnantMotherRecord } => {
+  if (!nic || !nic.trim()) return { isDuplicate: false };
+  const clean = nic.trim().toUpperCase();
+  const records = loadPregnantMothers();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const found = records.find((r) => {
+    if (currentRecordId && r.id === currentRecordId) return false;
+    if (r.nic.trim().toUpperCase() !== clean) return false;
+    // Active if not completed AND today is before or equal to expected completion date
+    return !r.isCompleted && r.status !== 'COMPLETED' && r.expectedCompletionDate >= today;
+  });
+
+  return {
+    isDuplicate: !!found,
+    existingRecord: found,
+  };
+};
+
+export const getPregnancyCountForNic = (nic: string): number => {
+  if (!nic || !nic.trim()) return 1;
+  const clean = nic.trim().toUpperCase();
+  const records = loadPregnantMothers();
+  const matching = records.filter((r) => r.nic.trim().toUpperCase() === clean);
+  return matching.length + 1;
 };
 
 export const loadBeneficiaries = (): Beneficiary[] => {
@@ -626,7 +703,7 @@ export const checkDuplicateAssistance = (
 // Database Snapshot for Google Drive / JSON file
 export const createDatabaseSnapshot = () => {
   return {
-    version: '3.1',
+    version: '4.0',
     exportedAt: new Date().toISOString(),
     organization: 'Divisional Secretariat Koralaipattu North (Vaharai)',
     users: loadUsers(),
@@ -635,6 +712,7 @@ export const createDatabaseSnapshot = () => {
     divisions: loadDivisions(),
     auditLogs: loadAuditLogs(),
     assistance: loadAssistanceRecords(),
+    pregnantMothers: loadPregnantMothers(),
   };
 };
 
@@ -648,6 +726,7 @@ export const restoreDatabaseFromSnapshot = (snapshot: any): boolean => {
   if (Array.isArray(snapshot.divisions)) setStoredData(STORAGE_KEYS.DIVISIONS, snapshot.divisions);
   if (Array.isArray(snapshot.assistance)) setStoredData(STORAGE_KEYS.ASSISTANCE, snapshot.assistance);
   if (Array.isArray(snapshot.auditLogs)) setStoredData(STORAGE_KEYS.AUDIT_LOGS, snapshot.auditLogs);
+  if (Array.isArray(snapshot.pregnantMothers)) setStoredData(STORAGE_KEYS.PREGNANT_MOTHERS, snapshot.pregnantMothers);
   
   notifyCrossTabSync('DATABASE_RESTORED');
   return true;

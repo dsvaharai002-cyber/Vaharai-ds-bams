@@ -153,6 +153,30 @@ export const StorageTransparencyModal: React.FC<StorageTransparencyModalProps> =
                 {lang === 'ta' ? 'கோப்பு பெயர்:' : 'File:'} <strong className="text-slate-800">{info.cloudGoogleDrive.fileName}</strong>
               </div>
             </div>
+
+            {/* Central Server & Capacity Q&A Explanatory Box (Requirement 06) */}
+            <div className="p-4 bg-emerald-950 text-emerald-100 rounded-xl space-y-2.5 text-xs">
+              <div className="font-bold text-amber-300 flex items-center gap-1.5 text-sm">
+                <Server className="w-4 h-4 text-amber-400" />
+                <span>{lang === 'ta' ? 'மத்திய சர்வர் (Central Server) வழிகாட்டி & கொள்ளளவு விபரம்' : 'Central Server Guide & Capacity Information'}</span>
+              </div>
+              <div className="space-y-1.5 text-[11px] leading-relaxed text-slate-200">
+                <p>
+                  <strong className="text-amber-200">1. மத்திய சர்வர் எனப்படுவது எது?</strong><br />
+                  இது செயலகத்தின் அனைத்து கணினிகளையும் இணைக்கும் மைய இயங்குதளம் (`/api/database`). வரவேற்பகத்தில் டோக்கன் வழங்குவது முதல், கிராம அலுவலர் பதிவுகள் வரை அனைத்தும் இந்த மத்திய சர்வர் ஊடாக பகிரப்படுகின்றன.
+                </p>
+                <p>
+                  <strong className="text-amber-200">2. அதனை எவ்வாறு மாற்ற முடியும்?</strong><br />
+                  மேல் வலது மூலையில் உள்ள 'Google Drive / மத்திய தரவுத்தளம்' மெனுவுக்குச் சென்று உங்கள் சொந்த உத்தியோகபூர்வ Google கணக்கை இணைத்து Drive File ID-ஐ மாற்றலாம்; அல்லது JSON கோப்பை தரவிறக்கம்/பதிவேற்றம் செய்து தரவுத்தளத்தை விரும்பியவாறு மாற்றியமைக்கலாம்.
+                </p>
+                <p>
+                  <strong className="text-amber-200">3. அதன் கொள்ளளவு எவ்வளவு (Capacity)?</strong><br />
+                  - <span className="text-white font-mono">Browser Storage:</span> ~10 MB (சுமார் 15,000+ பிரஜைகள்)<br />
+                  - <span className="text-white font-mono">மத்திய Server Disk:</span> வரம்பற்றது (Unlimited JSON records)<br />
+                  - <span className="text-white font-mono">Google Drive Cloud:</span> 15 GB இலவச இடம் (பல இலட்சம் குடும்பங்களின் விபரங்களை சேமிக்க போதுமானது).
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Quick Manual Download Button */}

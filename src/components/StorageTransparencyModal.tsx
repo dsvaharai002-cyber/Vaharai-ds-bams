@@ -32,19 +32,19 @@ export const StorageTransparencyModal: React.FC<StorageTransparencyModalProps> =
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/70 backdrop-blur-xs overflow-hidden pointer-events-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[92vh] border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-950 to-slate-900 p-5 text-white flex items-center justify-between">
+        <div className="shrink-0 bg-gradient-to-r from-emerald-950 to-slate-900 p-4 sm:p-5 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-emerald-800/80 rounded-xl text-amber-300">
               <HardDrive className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-base font-bold">
+              <h3 className="text-sm sm:text-base font-bold">
                 {lang === 'ta' ? 'தரவுகள் எங்கு சேமிக்கப்படுகின்றன? (Data Storage)' : 'Where is Your Data Stored?'}
               </h3>
-              <p className="text-xs text-emerald-200">
+              <p className="text-[11px] sm:text-xs text-emerald-200">
                 {lang === 'ta'
                   ? 'பிரதேச செயலக 3-அடுக்கு பாதுகாப்பு தரவு களஞ்சிய கட்டமைப்பு'
                   : 'Divisional Secretariat 3-Tier Secure Data Storage Architecture'}
@@ -59,8 +59,8 @@ export const StorageTransparencyModal: React.FC<StorageTransparencyModalProps> =
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-5 sm:p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+        {/* Content (Scrollable Body) */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {/* Summary Alert */}
           <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-3">
             <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
@@ -196,11 +196,11 @@ export const StorageTransparencyModal: React.FC<StorageTransparencyModalProps> =
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 bg-slate-100 border-t border-slate-200 flex justify-end">
+        {/* Footer (Sticky Bottom) */}
+        <div className="shrink-0 p-3 sm:p-4 bg-slate-100 border-t border-slate-200 flex justify-end">
           <button
             onClick={onClose}
-            className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-colors"
+            className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
           >
             {t.close}
           </button>

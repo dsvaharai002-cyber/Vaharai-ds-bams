@@ -41,12 +41,12 @@ export const BeneficiaryIdCardModal: React.FC<BeneficiaryIdCardModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 overflow-y-auto">
-      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 border border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-2 sm:p-4 overflow-hidden pointer-events-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full flex flex-col max-h-[92vh] border border-slate-200 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200 no-print">
+        <div className="shrink-0 p-3.5 sm:p-4 border-b border-slate-200 flex items-center justify-between no-print bg-slate-50/80">
           <div>
-            <h3 className="text-base font-semibold text-slate-900">
+            <h3 className="text-sm sm:text-base font-semibold text-slate-900">
               {t.viewIdCard}
             </h3>
             <p className="text-xs text-slate-500">
@@ -55,14 +55,15 @@ export const BeneficiaryIdCardModal: React.FC<BeneficiaryIdCardModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 text-lg leading-none p-1"
+            className="text-slate-400 hover:text-slate-700 text-lg leading-none p-1.5 rounded-lg hover:bg-slate-200 transition-colors"
           >
             ✕
           </button>
         </div>
 
-        {/* Printable Official ID Card */}
-        <div id="printable-id-card" className="my-5 p-5 bg-gradient-to-br from-emerald-50 via-white to-slate-50 border-2 border-emerald-800 rounded-xl shadow-sm text-slate-800 relative overflow-hidden">
+        {/* Printable Official ID Card Body (Scrollable) */}
+        <div className="flex-1 overflow-y-auto p-3 sm:p-5">
+          <div id="printable-id-card" className="p-4 sm:p-5 bg-gradient-to-br from-emerald-50 via-white to-slate-50 border-2 border-emerald-800 rounded-xl shadow-xs text-slate-800 relative overflow-hidden">
           {/* Subtle Security Micro-print line */}
           <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-700 via-yellow-600 to-emerald-700"></div>
 
@@ -184,19 +185,20 @@ export const BeneficiaryIdCardModal: React.FC<BeneficiaryIdCardModalProps> = ({
               <div className="font-serif italic text-slate-700 mt-1">DS Koralaipattu North</div>
             </div>
           </div>
+          </div>
         </div>
 
-        {/* Buttons */}
-        <div className="flex items-center justify-end gap-3 mt-4 no-print">
+        {/* Buttons (Sticky Footer) */}
+        <div className="shrink-0 p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 no-print">
           <button
             onClick={handlePrint}
-            className="py-2 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+            className="py-2 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
           >
             <span>🖨️ {t.printIdCard}</span>
           </button>
           <button
             onClick={onClose}
-            className="py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-xs transition-colors"
+            className="py-2 px-4 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-medium text-xs transition-colors cursor-pointer"
           >
             {t.close}
           </button>

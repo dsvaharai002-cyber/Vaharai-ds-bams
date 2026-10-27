@@ -5,6 +5,7 @@ import {
   GNDivision,
   AssistanceRecord,
   PregnantMotherRecord,
+  LandRecord,
   ALL_WELFARE_SCHEMES_LIST,
   WelfareScheme,
   FamilyRelationship,
@@ -21,6 +22,7 @@ import {
   generatePregnantMothersSampleCsv,
   generateDisabilitySampleCsv,
   generateAswesumaSampleCsv,
+  generateLandSampleCsv,
   parseBeneficiariesFromCsv,
   parseUsersFromCsv,
   parseAssistanceFromCsv,
@@ -29,6 +31,7 @@ import {
   parsePregnantMothersFromCsv,
   parseDisabilityFromCsv,
   parseAswesumaFromCsv,
+  parseLandFromCsv,
   exportBeneficiariesToCsv,
   exportUsersToCsv,
   exportDivisionsToCsv,
@@ -38,11 +41,13 @@ import {
   exportPregnantMothersToCsv,
   exportDisabilityToCsv,
   exportAswesumaToCsv,
+  exportLandToCsv,
   getRelationshipTamilLabel,
 } from '../services/csv';
 import {
   FileSpreadsheet,
   Download,
+  Compass,
   Upload,
   AlertTriangle,
   CheckCircle2,
@@ -74,12 +79,14 @@ interface CsvManagementViewProps {
   divisions: GNDivision[];
   assistanceRecords?: AssistanceRecord[];
   pregnantMothers?: PregnantMotherRecord[];
+  landRecords?: LandRecord[];
   currentUser: User;
   lang: Language;
   onUpdateBeneficiaries: (items: Beneficiary[]) => void;
   onUpdateUsers: (items: User[]) => void;
   onUpdateAssistanceRecords?: (items: AssistanceRecord[]) => void;
   onUpdatePregnantMothers?: (items: PregnantMotherRecord[]) => void;
+  onUpdateLandRecords?: (items: LandRecord[]) => void;
   onAuditLog: (action: string, details: string) => void;
 }
 
@@ -91,6 +98,7 @@ export type ActiveCsvType =
   | 'aswesuma'
   | 'beneficiaries'
   | 'assistance'
+  | 'land'
   | 'users'
   | 'divisions';
 
@@ -100,12 +108,14 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
   divisions,
   assistanceRecords = [],
   pregnantMothers = [],
+  landRecords = [],
   currentUser,
   lang,
   onUpdateBeneficiaries,
   onUpdateUsers,
   onUpdateAssistanceRecords,
   onUpdatePregnantMothers,
+  onUpdateLandRecords,
   onAuditLog,
 }) => {
   const t = translations[lang];
@@ -113,6 +123,20 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
   // Primary View Mode: CSV Management vs Connected Family Visualizer
   const [viewMode, setViewMode] = useState<'csv_io' | 'family_visualizer'>('csv_io');
   const [activeType, setActiveType] = useState<ActiveCsvType>('families');
+
+  // Assistance Program Batch Info State (Requirement 06)
+  const [assistanceProgramTitle, setAssistanceProgramTitle] = useState<string>(
+    'வறட்சி / வெள்ள நிவாரண விநியோகம் 2026 (Flood & Drought Relief)'
+  );
+  const [assistanceBatchId, setAssistanceBatchId] = useState<string>(
+    () => `AID-PRG-2026-${Math.floor(1000 + Math.random() * 9000)}`
+  );
+  const [assistanceDonor, setAssistanceDonor] = useState<string>(
+    'பிரதேச செயலகம் வாகரை / DS Office Vaharai'
+  );
+  const [assistanceDate, setAssistanceDate] = useState<string>(
+    () => new Date().toISOString().slice(0, 10)
+  );
 
   // Import State
   const [fileContent, setFileContent] = useState<string>('');
@@ -186,6 +210,9 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
     } else if (activeType === 'assistance') {
       const csv = generateAssistanceSampleCsv();
       downloadCsvFile(csv, 'vaharai_ds_assistance_distribution_sample.csv');
+    } else if (activeType === 'land') {
+      const csv = generateLandSampleCsv();
+      downloadCsvFile(csv, 'vaharai_ds_land_permits_sample.csv');
     } else if (activeType === 'users') {
       const csv = generateUsersSampleCsv();
       downloadCsvFile(csv, 'vaharai_ds_staff_users_sample.csv');
@@ -225,6 +252,10 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
       const csv = exportAssistanceToCsv(assistanceRecords);
       downloadCsvFile(csv, `vaharai_assistance_distribution_${timestamp}.csv`);
       onAuditLog('EXPORT_CSV', `Exported ${assistanceRecords.length} assistance distribution records to CSV`);
+    } else if (activeType === 'land') {
+      const csv = exportLandToCsv(landRecords);
+      downloadCsvFile(csv, `vaharai_land_records_${timestamp}.csv`);
+      onAuditLog('EXPORT_CSV', `Exported ${landRecords.length} land records to CSV`);
     } else if (activeType === 'users') {
       const csv = exportUsersToCsv(users);
       downloadCsvFile(csv, `vaharai_users_${timestamp}.csv`);
@@ -278,13 +309,26 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
         setParsedDuplicates([]);
         setParseErrors(errors);
       } else if (activeType === 'assistance') {
+        // Requirement 06: Apply Batch Metadata (Unique ID and Program Title)
         const { validRecords, duplicateRecords, errors } = parseAssistanceFromCsv(
           text,
           assistanceRecords,
-          beneficiaries
+          beneficiaries,
+          {
+            programBatchId: assistanceBatchId,
+            programTitle: assistanceProgramTitle,
+            donor: assistanceDonor,
+            date: assistanceDate,
+          }
         );
         setParsedPreview(validRecords);
         setParsedDuplicates(duplicateRecords);
+        setParseErrors(errors);
+      } else if (activeType === 'land') {
+        // Requirement 05: Land CSV parsing
+        const { items, errors } = parseLandFromCsv(text, landRecords);
+        setParsedPreview(items);
+        setParsedDuplicates([]);
         setParseErrors(errors);
       } else if (activeType === 'users') {
         const { items, errors } = parseUsersFromCsv(text);
@@ -386,6 +430,20 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
       onAuditLog('IMPORT_CSV', `Imported ${newUsers.length} staff users via CSV`);
       setSuccessBanner(
         `${newUsers.length} ${lang === 'ta' ? 'அலுவலர் கணக்குகள் சேர்க்கப்பட்டன!' : 'users imported successfully!'}`
+      );
+    } else if (activeType === 'land') {
+      const newLand = parsedPreview as LandRecord[];
+      const existingMap = new Map(landRecords.map((l) => [l.id, l]));
+      for (const item of newLand) {
+        existingMap.set(item.id, item);
+      }
+      const merged = Array.from(existingMap.values());
+      if (onUpdateLandRecords) onUpdateLandRecords(merged);
+      onAuditLog('IMPORT_CSV', `Imported ${newLand.length} land records via CSV`);
+      setSuccessBanner(
+        lang === 'ta'
+          ? `✅ ${newLand.length} காணிப் பதிவுகள் (அனுமதிப்பத்திரம் / LDO) வெற்றிகரமாக சேர்க்கப்பட்டன!`
+          : `✅ ${newLand.length} land records (Permits / LDO) imported successfully!`
       );
     }
 
@@ -505,7 +563,7 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
       {/* ========================================================================= */}
       {viewMode === 'csv_io' && (
         <div className="space-y-5">
-          {/* Dataset Model Selection Tabs (Full 9 Dedicated Models) */}
+          {/* Dataset Model Selection Tabs (Full 10 Dedicated Models including Land) */}
           <div className="p-1.5 bg-slate-200/80 rounded-2xl flex items-center gap-1.5 flex-wrap">
             {[
               { id: 'families', labelTa: '👨‍👩‍👧‍👦 குடும்பங்கள் (உறவுகளுடன்)', labelEn: 'Family Units (Relationships)', color: 'bg-emerald-800 text-white' },
@@ -515,6 +573,7 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
               { id: 'aswesuma', labelTa: '🌾 அஸ்வெசும நலன்புரி (Aswesuma)', labelEn: 'Aswesuma CSV', color: 'bg-amber-700 text-white' },
               { id: 'beneficiaries', labelTa: '👥 பிரஜைகள் (All Citizens)', labelEn: 'Citizens CSV', color: 'bg-teal-800 text-white' },
               { id: 'assistance', labelTa: '🎁 நிவாரணம் & உதவி வழங்கல்', labelEn: 'Relief Aid CSV', color: 'bg-rose-800 text-white' },
+              { id: 'land', labelTa: '🗺️ காணிப் பதிவுகள் (Land Records)', labelEn: 'Land Permits CSV', color: 'bg-emerald-900 text-white' },
               { id: 'users', labelTa: '👔 உத்தியோகத்தர்கள் (Staff)', labelEn: 'Staff Users CSV', color: 'bg-slate-800 text-white' },
               { id: 'divisions', labelTa: '🏛️ பிரிவுகள் (Divisions)', labelEn: 'GN Divisions', color: 'bg-slate-800 text-white' },
             ].map((tab) => (
@@ -555,15 +614,21 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
                       ? lang === 'ta' ? 'அஸ்வெசும நலன்புரி சிஎஸ்வி மாதிரி (Aswesuma Poverty Relief Model)' : 'Aswesuma Poverty Relief Model'
                       : activeType === 'assistance'
                       ? lang === 'ta' ? 'நிவாரண உதவி வழங்கல் சிஎஸ்வி மாதிரி (இரட்டை உதவி தடுப்புடன்)' : 'Aid Distribution CSV with Duplicate Prevention'
+                      : activeType === 'land'
+                      ? lang === 'ta' ? 'காணி உறுதி & அனுமதிப்பத்திர மாதிரி (Land Permits & LDO Model)' : 'Land Permits & Grants Model'
                       : activeType === 'beneficiaries'
                       ? lang === 'ta' ? 'முழுமையான பிரஜைகள் சிஎஸ்வி மாதிரி' : 'General Citizens CSV Model'
                       : lang === 'ta' ? 'அலுவலக சிஎஸ்வி மாதிரி' : 'Staff / Division CSV Model'}
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  {lang === 'ta'
-                    ? 'ஒவ்வொரு பதிவிலும் குடும்பத்திற்கு பொதுவான Family QR எண் மற்றும் உறவுநிலை (தாய், தந்தை, மகன், மகள், தாத்தா, பாட்டி) கேட்கப்பட்டு ஒரே குடும்பமாக இணைக்கப்படும்.'
-                    : 'Each record links to a shared Family QR Code and relationship role (Father, Mother, Son, Daughter, Grandparents) connecting the whole household.'}
+                  {activeType === 'land'
+                    ? (lang === 'ta'
+                        ? 'காணி அனுமதிப்பத்திரம் (Permit), LDO மானியம், காணித் துண்டு எண், பரப்பு (ஏக்கர்/றூட்/பேர்ச்) விபரங்கள் பதிவு செய்யப்படும்.'
+                        : 'Land permits, LDO grants, plot lot numbers, and extent (Acres/Roods/Perches) are recorded.')
+                    : (lang === 'ta'
+                        ? 'ஒவ்வொரு பதிவிலும் குடும்பத்திற்கு பொதுவான Family QR எண் மற்றும் உறவுநிலை கேட்கப்பட்டு ஒரே குடும்பமாக இணைக்கப்படும்.'
+                        : 'Each record links to a shared Family QR Code and relationship role connecting the whole household.')}
                 </p>
               </div>
 
@@ -575,6 +640,76 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
                 <span>{lang === 'ta' ? 'மாதிரி கோப்பை பதிவிறக்கு' : 'Download Sample CSV'}</span>
               </button>
             </div>
+
+            {/* Requirement 06: Unique Computer-Generated ID & Assistance Title Input Section */}
+            {activeType === 'assistance' && (
+              <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-rose-950 flex items-center gap-1.5">
+                      <span>🏷️</span>
+                      <span>
+                        {lang === 'ta'
+                          ? '06. உதவிக்கான தலைப்பு & கணினியின் தனித்துவ அடையாள எண் (Batch ID)'
+                          : 'Assistance Program Title & Unique Batch ID'}
+                      </span>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAssistanceBatchId(`AID-PRG-2026-${Math.floor(1000 + Math.random() * 9000)}`)}
+                    className="px-2.5 py-1 bg-white hover:bg-rose-100 text-rose-900 border border-rose-300 rounded text-[11px] font-bold shadow-2xs transition-colors"
+                  >
+                    🔄 {lang === 'ta' ? 'புதிய ID உருவாக்கு' : 'Generate New ID'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+                  <div className="lg:col-span-2">
+                    <label className="block text-slate-700 font-bold mb-1">
+                      {lang === 'ta' ? 'குறித்த உதவிக்கான தலைப்பு (Program Title):' : 'Assistance Program Title:'}
+                    </label>
+                    <input
+                      type="text"
+                      value={assistanceProgramTitle}
+                      onChange={(e) => setAssistanceProgramTitle(e.target.value)}
+                      placeholder="எ.கா: 2026 வெள்ள நிவாரண உதவி கட்டம் 1"
+                      className="w-full px-3 py-1.5 border border-rose-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      {lang === 'ta' ? 'கணினி தனித்துவ இலக்கம் (Batch ID):' : 'Unique Program ID:'}
+                    </label>
+                    <input
+                      type="text"
+                      value={assistanceBatchId}
+                      onChange={(e) => setAssistanceBatchId(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-rose-300 rounded-lg bg-white font-mono font-bold text-rose-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      {lang === 'ta' ? 'வழங்கும் திகதி:' : 'Distribution Date:'}
+                    </label>
+                    <input
+                      type="date"
+                      value={assistanceDate}
+                      onChange={(e) => setAssistanceDate(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-rose-300 rounded-lg bg-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-rose-800">
+                  {lang === 'ta'
+                    ? '💡 நீங்கள் அப்லோட் செய்யும் சிஎஸ்வி கோப்பில் உள்ள அனைத்து பதிவுகளுக்கும் இந்த தலைப்பும் தனித்துவ கணினி இலக்கமும் தானாக ஒதுக்கப்பட்டு இரட்டை உதவிகள் சரிபார்க்கப்படும்.'
+                    : '💡 All records in your uploaded CSV will be stamped with this Program Title and Unique ID, and checked against previous relief distributions.'}
+                </p>
+              </div>
+            )}
 
             {/* File Upload Selector */}
             <div className="flex items-center gap-3 flex-wrap">
@@ -635,59 +770,108 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
 
               {/* Preview Table */}
               <div className="overflow-x-auto max-h-96 border border-slate-200 rounded-xl">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-700 text-[11px] uppercase tracking-wider sticky top-0 border-b border-slate-200">
-                    <tr>
-                      <th className="p-2.5">#</th>
-                      <th className="p-2.5">குடும்ப QR / Code</th>
-                      <th className="p-2.5">குடும்ப உறவுநிலை</th>
-                      <th className="p-2.5">அடையாள அட்டை (NIC)</th>
-                      <th className="p-2.5">பெயர்</th>
-                      <th className="p-2.5">வயது</th>
-                      <th className="p-2.5">நலன்புரி உதவிகள் (Checklist)</th>
-                      <th className="p-2.5">பிரிவு</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {parsedPreview.map((row, idx) => {
-                      const relLabel = getRelationshipTamilLabel(row.familyRelationship);
-                      const schemes: WelfareScheme[] = row.welfareSchemes || (row.welfareScheme ? [row.welfareScheme] : []);
-                      const age = calculateAge(row.dob);
-
-                      return (
+                {activeType === 'land' ? (
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-700 text-[11px] uppercase tracking-wider sticky top-0 border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5">#</th>
+                        <th className="p-2.5">அனுமதிப்பத்திர எண்</th>
+                        <th className="p-2.5">காணி வகை</th>
+                        <th className="p-2.5">உரிமையாளர் பெயர் & NIC</th>
+                        <th className="p-2.5">காணி அமைவிடம் / துண்டு</th>
+                        <th className="p-2.5">பரப்பு</th>
+                        <th className="p-2.5">நிலை</th>
+                        <th className="p-2.5">பிரிவு</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {parsedPreview.map((row: any, idx) => (
                         <tr key={idx} className="hover:bg-slate-50/80">
                           <td className="p-2.5 text-slate-400 font-mono">{idx + 1}</td>
                           <td className="p-2.5 font-mono font-bold text-emerald-950">
-                            <span className="bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                              {row.familyCode || 'FAM-GEN'}
+                            {row.permitNo || row.id}
+                          </td>
+                          <td className="p-2.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
+                              {row.landType}
                             </span>
                           </td>
                           <td className="p-2.5">
-                            <span className="px-2 py-0.5 bg-blue-50 text-blue-900 border border-blue-200 rounded text-[11px] font-bold">
-                              {relLabel}
+                            <div className="font-bold text-slate-900">{row.ownerNameTa}</div>
+                            <div className="text-[10px] font-mono text-slate-500">{row.ownerNic}</div>
+                          </td>
+                          <td className="p-2.5 text-slate-700">
+                            <div>{row.landAddress}</div>
+                            {row.plotLotNumber && <div className="text-[10px] text-slate-500 font-mono">Lot: {row.plotLotNumber}</div>}
+                          </td>
+                          <td className="p-2.5 font-mono text-slate-800">
+                            {row.extentAcres || 0}A {row.extentRoods || 0}R {row.extentPerches || 0}P
+                          </td>
+                          <td className="p-2.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-900">
+                              {row.permitStatus}
                             </span>
-                          </td>
-                          <td className="p-2.5 font-mono text-slate-800 font-semibold">{row.nic}</td>
-                          <td className="p-2.5">
-                            <div className="font-bold text-slate-900">{row.nameTa}</div>
-                            <div className="text-[10px] text-slate-500">{row.nameEn}</div>
-                          </td>
-                          <td className="p-2.5 font-mono text-slate-700">
-                            {age > 0 ? `${age} yrs` : '-'}
-                          </td>
-                          <td className="p-2.5">
-                            <div className="flex flex-wrap gap-1">
-                              {schemes.length > 0
-                                ? schemes.map((s) => getWelfareBadge(s))
-                                : <span className="text-[10px] text-slate-400 italic">None</span>}
-                            </div>
                           </td>
                           <td className="p-2.5 font-mono text-slate-600">{row.divisionCode}</td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-700 text-[11px] uppercase tracking-wider sticky top-0 border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5">#</th>
+                        <th className="p-2.5">குடும்ப QR / Code</th>
+                        <th className="p-2.5">குடும்ப உறவுநிலை</th>
+                        <th className="p-2.5">அடையாள அட்டை (NIC)</th>
+                        <th className="p-2.5">பெயர்</th>
+                        <th className="p-2.5">வயது</th>
+                        <th className="p-2.5">நலன்புரி உதவிகள் (Checklist)</th>
+                        <th className="p-2.5">பிரிவு</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {parsedPreview.map((row, idx) => {
+                        const relLabel = getRelationshipTamilLabel(row.familyRelationship);
+                        const schemes: WelfareScheme[] = row.welfareSchemes || (row.welfareScheme ? [row.welfareScheme] : []);
+                        const age = calculateAge(row.dob);
+
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50/80">
+                            <td className="p-2.5 text-slate-400 font-mono">{idx + 1}</td>
+                            <td className="p-2.5 font-mono font-bold text-emerald-950">
+                              <span className="bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                {row.familyCode || 'FAM-GEN'}
+                              </span>
+                            </td>
+                            <td className="p-2.5">
+                              <span className="px-2 py-0.5 bg-blue-50 text-blue-900 border border-blue-200 rounded text-[11px] font-bold">
+                                {relLabel}
+                              </span>
+                            </td>
+                            <td className="p-2.5 font-mono text-slate-800 font-semibold">{row.nic}</td>
+                            <td className="p-2.5">
+                              <div className="font-bold text-slate-900">{row.nameTa}</div>
+                              <div className="text-[10px] text-slate-500">{row.nameEn}</div>
+                            </td>
+                            <td className="p-2.5 font-mono text-slate-700">
+                              {age > 0 ? `${age} yrs` : '-'}
+                            </td>
+                            <td className="p-2.5">
+                              <div className="flex flex-wrap gap-1">
+                                {schemes.length > 0
+                                  ? schemes.map((s) => getWelfareBadge(s))
+                                  : <span className="text-[10px] text-slate-400 italic">None</span>}
+                              </div>
+                            </td>
+                            <td className="p-2.5 font-mono text-slate-600">{row.divisionCode}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           )}
@@ -697,9 +881,13 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
                 <div className="flex items-center gap-3 text-xs flex-wrap">
-                  <span className="font-bold text-slate-900">
-                    {lang === 'ta' ? 'பகுப்பாய்வு முடிவுகள்:' : 'Analysis:'}
-                  </span>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-100 text-rose-950 border border-rose-300 rounded-lg font-mono font-bold">
+                    <span>🏷️</span>
+                    <span>{assistanceBatchId}</span>
+                    <span className="text-rose-800 font-sans font-medium text-[11px] truncate max-w-[200px]">
+                      ({assistanceProgramTitle})
+                    </span>
+                  </div>
                   <span className="px-2.5 py-1 bg-emerald-100 text-emerald-900 rounded-full font-bold">
                     🟢 {parsedPreview.length} {lang === 'ta' ? 'தகுதியான புதிய உதவிகள்' : 'Eligible First-Time Aid'}
                   </span>

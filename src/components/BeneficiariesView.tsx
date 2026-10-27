@@ -113,6 +113,10 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
   const [editingBeneficiary, setEditingBeneficiary] = useState<Beneficiary | null>(null);
   const [isNewRecord, setIsNewRecord] = useState(false);
 
+  // Pagination State (Requirement 03: 10, 25, 50, 100, All)
+  const [pageSize, setPageSize] = useState<number | 'ALL'>(25);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
   // Form State
   const [formData, setFormData] = useState<Partial<Beneficiary>>({
     divisionCode: isGramaNiladhari ? officerDivision : '211',
@@ -197,6 +201,19 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
     searchQuery,
     selectedStatusFilter,
   ]);
+
+  // Pagination calculation (Requirement 03: 10, 25, 50, 100, All)
+  const totalPages = pageSize === 'ALL' ? 1 : Math.max(1, Math.ceil(filteredBeneficiaries.length / (pageSize as number)));
+  const paginatedBeneficiaries = useMemo(() => {
+    if (pageSize === 'ALL') return filteredBeneficiaries;
+    const start = (currentPage - 1) * (pageSize as number);
+    return filteredBeneficiaries.slice(start, start + (pageSize as number));
+  }, [filteredBeneficiaries, currentPage, pageSize]);
+
+  // Reset page when filters or pageSize change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedDivision, selectedWelfare, selectedIllness, filterYouth16Only, selectedStatusFilter, categoryFilter, pageSize]);
 
   // Open Status Change Modal (மரணப்பதிவு / பதிவுமாற்றம்)
   const handleOpenStatusModal = (b: Beneficiary) => {
@@ -662,8 +679,9 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
 
       {/* Responsive Table Container (With overflow-x-auto to prevent mobile blowout) */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs w-full">
-        <div className="px-4 sm:px-5 py-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between text-xs flex-wrap gap-2">
-          <div className="flex items-center gap-2">
+        {/* Top Pagination & Stats Toolbar */}
+        <div className="px-4 sm:px-5 py-3 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between text-xs flex-wrap gap-2.5">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-slate-800 uppercase tracking-wider font-mono">
               {filteredBeneficiaries.length} {t.records}
             </span>
@@ -677,10 +695,58 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                 வடிகட்டி: {selectedStatusFilter}
               </span>
             )}
+            <span className="text-slate-400">|</span>
+            {/* Rows Per Page Selector (Point 03) */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-600 font-medium">
+                {lang === 'ta' ? 'பக்கத்தில் காட்டு:' : 'Rows per page:'}
+              </span>
+              <div className="flex items-center bg-white border border-slate-300 rounded-lg overflow-hidden shadow-2xs">
+                {([10, 25, 50, 100, 'ALL'] as const).map((sz) => (
+                  <button
+                    key={sz}
+                    type="button"
+                    onClick={() => {
+                      setPageSize(sz);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                      pageSize === sz
+                        ? 'bg-emerald-700 text-white'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {sz === 'ALL' ? (lang === 'ta' ? 'அனைத்தும்' : 'All') : sz}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <span className="text-slate-500 text-[11px]">
-            {lang === 'ta' ? 'அனைவருக்கும் தானியங்கி System ID, குடும்ப QR மற்றும் பார்கோட் ஒதுக்கப்பட்டுள்ளது' : 'System ID, Family QR & Barcode assigned'}
-          </span>
+
+          {/* Quick Page Nav at Top */}
+          {pageSize !== 'ALL' && totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-slate-600">
+                {lang === 'ta' ? `பக்கம் ${currentPage} / ${totalPages}` : `Page ${currentPage} of ${totalPages}`}
+              </span>
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none rounded text-xs font-bold shadow-2xs"
+              >
+                ← {lang === 'ta' ? 'முந்தையது' : 'Prev'}
+              </button>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none rounded text-xs font-bold shadow-2xs"
+              >
+                {lang === 'ta' ? 'அடுத்தது' : 'Next'} →
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="w-full overflow-x-auto">
@@ -691,10 +757,10 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                   <th className="py-3 px-3 text-center w-10">
                     <input
                       type="checkbox"
-                      checked={selectedIds.size > 0 && selectedIds.size === filteredBeneficiaries.length}
+                      checked={selectedIds.size > 0 && selectedIds.size === paginatedBeneficiaries.length}
                       onChange={handleToggleSelectAll}
                       className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
-                      title={lang === 'ta' ? 'அனைத்தையும் தேர்ந்தெடு' : 'Select all'}
+                      title={lang === 'ta' ? 'இப்பக்கத் தரவுகளை தேர்ந்தெடு' : 'Select page records'}
                     />
                   </th>
                 )}
@@ -710,14 +776,14 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredBeneficiaries.length === 0 ? (
+              {paginatedBeneficiaries.length === 0 ? (
                 <tr>
                   <td colSpan={canDelete ? 10 : 9} className="py-10 text-center text-slate-400">
                     {t.noData}
                   </td>
                 </tr>
               ) : (
-                filteredBeneficiaries.map((b) => {
+                paginatedBeneficiaries.map((b) => {
                   const age = calculateAge(b.dob);
                   const activeSchemes = (b.welfareSchemes && b.welfareSchemes.length > 0)
                     ? b.welfareSchemes
@@ -901,6 +967,81 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Bottom Pagination Footer (Point 03) */}
+        <div className="px-4 sm:px-5 py-3 border-t border-slate-200 bg-slate-50/80 flex items-center justify-between text-xs flex-wrap gap-2.5">
+          <div className="text-slate-600 font-medium">
+            {pageSize === 'ALL'
+              ? (lang === 'ta' ? `அனைத்து ${filteredBeneficiaries.length} பதிவுகளும் காட்டப்படுகின்றன` : `Showing all ${filteredBeneficiaries.length} records`)
+              : (lang === 'ta'
+                  ? `காட்டப்படுவது ${(currentPage - 1) * (pageSize as number) + 1} - ${Math.min(currentPage * (pageSize as number), filteredBeneficiaries.length)} (மொத்தம் ${filteredBeneficiaries.length})`
+                  : `Showing ${(currentPage - 1) * (pageSize as number) + 1} - ${Math.min(currentPage * (pageSize as number), filteredBeneficiaries.length)} of ${filteredBeneficiaries.length}`)}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {pageSize !== 'ALL' && totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage(1)}
+                  className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none rounded text-xs font-bold shadow-2xs"
+                  title="First Page"
+                >
+                  ««
+                </button>
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none rounded text-xs font-bold shadow-2xs"
+                >
+                  ← {lang === 'ta' ? 'முந்தையது' : 'Prev'}
+                </button>
+
+                {/* Page Number Chips */}
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pNum = i + 1;
+                  if (totalPages > 5 && currentPage > 3) {
+                    pNum = Math.min(totalPages - 4 + i, Math.max(1, currentPage - 2 + i));
+                  }
+                  return (
+                    <button
+                      key={pNum}
+                      type="button"
+                      onClick={() => setCurrentPage(pNum)}
+                      className={`w-7 h-7 rounded text-xs font-bold transition-colors ${
+                        currentPage === pNum
+                          ? 'bg-emerald-700 text-white shadow-2xs'
+                          : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {pNum}
+                    </button>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none rounded text-xs font-bold shadow-2xs"
+                >
+                  {lang === 'ta' ? 'அடுத்தது' : 'Next'} →
+                </button>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                  className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none rounded text-xs font-bold shadow-2xs"
+                  title="Last Page"
+                >
+                  »»
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

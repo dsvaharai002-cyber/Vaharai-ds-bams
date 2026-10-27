@@ -12,6 +12,11 @@ import {
   ServiceDefinition,
   PregnantMotherRecord,
   MonthlyStampCollection,
+  LandRecord,
+  HouseholdData,
+  PovertyScoringWeights,
+  DEFAULT_POVERTY_WEIGHTS,
+  calculateFamilyPovertyScore,
 } from '../types';
 import initialDatabaseSeed from '../data/central_database.json';
 import { scheduleAutoDriveSync } from './googleDrive';
@@ -25,7 +30,68 @@ const STORAGE_KEYS = {
   ASSISTANCE: 'vaharai_ds_assistance_v6',
   SERVICES: 'vaharai_ds_services_v6',
   PREGNANT_MOTHERS: 'vaharai_ds_pregnant_mothers_v6',
+  LAND_RECORDS: 'vaharai_ds_land_records_v6',
+  HOUSEHOLDS: 'vaharai_ds_households_v6',
+  POVERTY_WEIGHTS: 'vaharai_ds_poverty_weights_v6',
+  DELETED_IDS: 'vaharai_ds_deleted_ids_v6',
   INITIALIZED: 'vaharai_ds_initialized_v6',
+};
+
+// ================= PERMANENT DELETION & TOMBSTONE TRACKING (Requirement 01) ================= //
+export const getDeletedIdsSet = (): Set<string> => {
+  try {
+    if (typeof window === 'undefined') return new Set<string>();
+    const raw = localStorage.getItem(STORAGE_KEYS.DELETED_IDS);
+    if (!raw) return new Set<string>();
+    const list = JSON.parse(raw);
+    return new Set(Array.isArray(list) ? list : []);
+  } catch {
+    return new Set<string>();
+  }
+};
+
+export const recordDeletedId = (id?: string, nic?: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const set = getDeletedIdsSet();
+    if (id && id.trim()) set.add(id.trim());
+    if (nic && nic.trim()) set.add(nic.trim());
+    localStorage.setItem(STORAGE_KEYS.DELETED_IDS, JSON.stringify(Array.from(set)));
+  } catch {
+    // ignore
+  }
+};
+
+export const recordDeletedIds = (ids: string[]) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const set = getDeletedIdsSet();
+    ids.forEach((i) => {
+      if (i && i.trim()) set.add(i.trim());
+    });
+    localStorage.setItem(STORAGE_KEYS.DELETED_IDS, JSON.stringify(Array.from(set)));
+  } catch {
+    // ignore
+  }
+};
+
+export const isRecordDeleted = (id?: string, nic?: string): boolean => {
+  const set = getDeletedIdsSet();
+  const idMatch = id ? set.has(id.trim()) : false;
+  const nicMatch = nic ? set.has(nic.trim()) : false;
+  return idMatch || nicMatch;
+};
+
+export const removeDeletedId = (id?: string, nic?: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const set = getDeletedIdsSet();
+    if (id) set.delete(id.trim());
+    if (nic) set.delete(nic.trim());
+    localStorage.setItem(STORAGE_KEYS.DELETED_IDS, JSON.stringify(Array.from(set)));
+  } catch {
+    // ignore
+  }
 };
 
 // Purge legacy mock data cache from previous versions so users see a completely fresh registration portal
@@ -131,7 +197,17 @@ export const INITIAL_SUPERADMIN_USER: User = {
   createdAt: '2026-01-01T00:00:00Z',
 };
 
-export const DEFAULT_USERS: User[] = [INITIAL_SUPERADMIN_USER];
+export const INITIAL_LAND_OFFICER_USER: User = {
+  id: '605',
+  password: '605',
+  name: 'காணி பிரிவு உத்தியோகத்தர் (Land Officer)',
+  role: 'LAND_OFFICER',
+  division: 'ALL',
+  status: 'ACTIVE',
+  createdAt: '2026-01-01T00:00:00Z',
+};
+
+export const DEFAULT_USERS: User[] = [INITIAL_SUPERADMIN_USER, INITIAL_LAND_OFFICER_USER];
 
 // Clean Citizens Database: Zero mock citizens (Murugesu etc. removed)
 export const DEFAULT_BENEFICIARIES: Beneficiary[] = ((initialDatabaseSeed as any)?.beneficiaries as Beneficiary[]) || [];
@@ -391,13 +467,18 @@ export const setStoredData = <T>(key: string, data: T): void => {
 };
 
 export const loadUsers = (): User[] => {
-  const users = getStoredData<User[]>(STORAGE_KEYS.USERS, DEFAULT_USERS);
-  // Guarantee the Super Admin 93008148555 is always present with official credentials
-  const hasSuperAdmin = users.some((u) => u.id === '93008148555');
-  if (!hasSuperAdmin) {
-    const updated = [INITIAL_SUPERADMIN_USER, ...users];
-    setStoredData(STORAGE_KEYS.USERS, updated);
-    return updated;
+  let users = getStoredData<User[]>(STORAGE_KEYS.USERS, DEFAULT_USERS);
+  let changed = false;
+  if (!users.some((u) => u.id === '93008148555')) {
+    users = [INITIAL_SUPERADMIN_USER, ...users];
+    changed = true;
+  }
+  if (!users.some((u) => u.id === '605' || u.role === 'LAND_OFFICER')) {
+    users = [...users, INITIAL_LAND_OFFICER_USER];
+    changed = true;
+  }
+  if (changed) {
+    setStoredData(STORAGE_KEYS.USERS, users);
   }
   return users;
 };
@@ -464,7 +545,10 @@ export const getPregnancyCountForNic = (nic: string): number => {
 
 export const loadBeneficiaries = (): Beneficiary[] => {
   const stored = getStoredData<Beneficiary[]>(STORAGE_KEYS.BENEFICIARIES, DEFAULT_BENEFICIARIES);
-  return stored.map((b) => {
+  const deletedSet = getDeletedIdsSet();
+  // Filter out any that were deleted/tombstoned so deletions stay permanently deleted on refresh
+  const filtered = stored.filter((b) => !deletedSet.has(b.id) && !deletedSet.has(b.nic));
+  return filtered.map((b) => {
     const familyCode = b.familyCode || (b.householdNo ? `FAM-${b.householdNo.replace(/^HH-/, '')}` : `FAM-${b.divisionCode}-001`);
     const familyQrPayload = b.familyQrPayload || `VHR-FAMILY|FAM:${familyCode}|DIV:${b.divisionCode}`;
     return {
@@ -474,9 +558,27 @@ export const loadBeneficiaries = (): Beneficiary[] => {
     };
   });
 };
-export const saveBeneficiaries = (items: Beneficiary[]) => {
+
+export const saveBeneficiaries = (items: Beneficiary[], trackDeletions: boolean = true) => {
+  if (trackDeletions) {
+    const prev = getStoredData<Beneficiary[]>(STORAGE_KEYS.BENEFICIARIES, []);
+    const newIds = new Set(items.map((b) => b.id));
+    const newNics = new Set(items.map((b) => b.nic));
+    for (const p of prev) {
+      if (!newIds.has(p.id) && !newNics.has(p.nic)) {
+        recordDeletedId(p.id, p.nic);
+      }
+    }
+  }
   setStoredData(STORAGE_KEYS.BENEFICIARIES, items);
   scheduleCentralSync();
+};
+
+export const deleteSingleBeneficiary = (id: string, nic?: string) => {
+  recordDeletedId(id, nic);
+  const current = loadBeneficiaries();
+  const updated = current.filter((b) => b.id !== id && (nic ? b.nic !== nic : true));
+  saveBeneficiaries(updated, false);
 };
 
 export const loadTokens = (): QueueToken[] => {
@@ -499,10 +601,234 @@ export const saveServices = (services: ServiceDefinition[]) => {
   scheduleCentralSync();
 };
 
+// ================= LAND BRANCH DATA STORE (Requirement 05) ================= //
+export const DEFAULT_LAND_RECORDS: LandRecord[] = [
+  {
+    id: 'LND-211-2026-001',
+    permitNo: 'LDO/211/2024/042',
+    lotNo: '14-B',
+    planNo: 'BCO/VHR/2023/118',
+    extent: '0A-1R-20P',
+    landType: 'CROWN_PERMIT',
+    divisionCode: '211',
+    ownerNic: '741239845V',
+    ownerNameTa: 'கணபதிப்பிள்ளை சிவலிங்கம்',
+    ownerNameEn: 'Kanapathipillai Sivalingam',
+    ownerPhone: '0771234567',
+    familyCode: 'FAM-211-001',
+    permitStatus: 'PERMIT_ISSUED',
+    issueDate: '2024-05-12',
+    annualTaxStatus: 'PAID',
+    boundaries: {
+      north: 'வீதி (Public Road)',
+      south: 'முருகேசு காணி (Murugesu Land)',
+      east: 'வாய்க்கால் (Canal)',
+      west: 'அரச காணி (Crown Land)',
+    },
+    notes: 'அரச காணி அனுமதிப்பத்திரம் ஒழுங்காக புதுப்பிக்கப்பட்டுள்ளது.',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'LND-211A-2026-002',
+    permitNo: 'LDO/211A/2025/089',
+    lotNo: '28',
+    planNo: 'BCO/VHR/2024/204',
+    extent: '1A-0R-00P',
+    landType: 'AGRICULTURAL',
+    divisionCode: '211A',
+    ownerNic: '891902697V',
+    ownerNameTa: 'சின்னப்பு விஜயகுமார்',
+    ownerNameEn: 'Sinnappu Vijayakumar',
+    ownerPhone: '0760539158',
+    familyCode: 'FAM-211-042',
+    permitStatus: 'PENDING_APPROVAL',
+    issueDate: '2025-08-19',
+    annualTaxStatus: 'DUE',
+    boundaries: {
+      north: 'காயான்கேணி வீதி (Kayankerni Road)',
+      south: 'வயல் வெளி (Paddy Field)',
+      east: 'அரச காணி (State Land)',
+      west: 'தவராசா காணி (Thavarasa Land)',
+    },
+    notes: 'அனுமதிப்பத்திர எல்லை மீளளவீடு செய்யப்பட வேண்டும்.',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  },
+];
+
+export const loadLandRecords = (): LandRecord[] => {
+  return getStoredData<LandRecord[]>(STORAGE_KEYS.LAND_RECORDS, DEFAULT_LAND_RECORDS);
+};
+
+export const saveLandRecords = (records: LandRecord[]) => {
+  setStoredData(STORAGE_KEYS.LAND_RECORDS, records);
+  scheduleCentralSync();
+};
+
+export const clearAllLandRecords = () => {
+  setStoredData(STORAGE_KEYS.LAND_RECORDS, []);
+  scheduleCentralSync();
+};
+
+// ================= HOUSEHOLDS & 100-POINT POVERTY SCORING STORE (Requirements 02, 04, 08) ================= //
+export const loadPovertyWeights = (): PovertyScoringWeights => {
+  return getStoredData<PovertyScoringWeights>(STORAGE_KEYS.POVERTY_WEIGHTS, DEFAULT_POVERTY_WEIGHTS);
+};
+
+export const savePovertyWeights = (weights: PovertyScoringWeights) => {
+  setStoredData(STORAGE_KEYS.POVERTY_WEIGHTS, weights);
+  // Recalculate scores for all households with new weights
+  const households = loadHouseholds();
+  const allBeneficiaries = loadBeneficiaries();
+  const updated = households.map((h) => {
+    const members = allBeneficiaries.filter((b) => b.familyCode === h.familyCode);
+    const scoreResult = calculateFamilyPovertyScore(h.commonAssets, members, weights);
+    return {
+      ...h,
+      score100: scoreResult.score100,
+      priorityRank: scoreResult.priorityRank,
+      scoreBreakdown: scoreResult.breakdown,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+  setStoredData(STORAGE_KEYS.HOUSEHOLDS, updated);
+  scheduleCentralSync();
+};
+
+export const resetPovertyWeights = (): PovertyScoringWeights => {
+  savePovertyWeights(DEFAULT_POVERTY_WEIGHTS);
+  return DEFAULT_POVERTY_WEIGHTS;
+};
+
+export const DEFAULT_HOUSEHOLDS: HouseholdData[] = [
+  {
+    id: 'HH-5-1-03-01-010-00435',
+    familyCode: 'FAM-211-042',
+    householdReference: 'HH-5-1-03-01-010-00435',
+    applicationReference: '20250515-4622119',
+    applicantNameTa: 'சின்னப்பு விஜயகுமார்',
+    applicantNameEn: 'SINNAPPU VIJAYAKUMAR',
+    applicantNic: '891902697V',
+    phone: '0760539158',
+    address: 'SELVAPURAM KAYANKERNI',
+    divisionCode: '211A',
+    status: 'DS_ENDORSED',
+    selectedCategory: 'VULNERABLE',
+    objectionsStatus: 'OC-08-10-2025-69523 [Completed]',
+    bankDetails: {
+      bankName: 'Peoples Bank',
+      branch: 'Valaichchenai',
+      accountNumber: '208390058609',
+      accountName: 'SINNAPPU VIJAYAKUMAR 891902697V',
+      status: 'VERIFIED',
+    },
+    commonAssets: {
+      ownsLand: false,
+      landExtent: 'NONE',
+      ownsOtherLand: false,
+      otherLandExtent: 'NONE',
+      vehicleType: 'NONE',
+      machineryType: 'NONE',
+      livestockType: 'GOATS',
+      livestockCount: 3,
+      expenses: {
+        food: 18000,
+        water: 500,
+        clothing: 2000,
+        medical: 4000,
+        rent: 0,
+        transport: 1500,
+        electricity: 1200,
+        fuelGas: 2500,
+        telecom: 1000,
+        education: 1500,
+        religiousLeisure: 500,
+        loansDebt: 3000,
+        total: 35700,
+      },
+      income: {
+        unstableSources: 12000,
+        salary: 0,
+        business: 0,
+        agriculture: 4000,
+        rent: 0,
+        pension: 0,
+        samurdhi: 2500,
+        elderlyAid: 0,
+        disabilityAid: 0,
+        ckdAid: 0,
+        foreignRemittance: 0,
+        localRemittance: 0,
+        otherGovAid: 0,
+        other: 0,
+        total: 18500,
+      },
+      electricityUnitsKwh: 28,
+      unitType: 'SINGLE_1_STORY',
+      floorMaterial: 'CLAY',
+      roofMaterial: 'THATCH_PALM',
+      wallMaterial: 'CLAY_MUD',
+      houseArea: 'LESS_THAN_500_SQFT',
+      ownsCurrentHouse: false,
+      ownsOtherHouse: false,
+      lightingSource: 'KEROSENE',
+      waterSource: 'UNPROTECTED_WELL',
+      toiletLocation: 'OPEN_DEFECATION',
+      toiletNature: 'NO_TOILET',
+      isSingleParent: false,
+    },
+    totalMembersCount: 4,
+    familyQrPayload: 'VHR-FAMILY|FAM:FAM-211-042|DIV:211A|UID:FAM-211-042-SEED',
+    score100: 88,
+    priorityRank: 1,
+    scoreBreakdown: {
+      housingScore: 25,
+      sanitationScore: 20,
+      demographicsScore: 18,
+      economicScore: 25,
+    },
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  },
+];
+
+export const loadHouseholds = (): HouseholdData[] => {
+  return getStoredData<HouseholdData[]>(STORAGE_KEYS.HOUSEHOLDS, DEFAULT_HOUSEHOLDS);
+};
+
+export const saveHouseholds = (households: HouseholdData[]) => {
+  setStoredData(STORAGE_KEYS.HOUSEHOLDS, households);
+  scheduleCentralSync();
+};
+
+export const saveSingleHousehold = (household: HouseholdData) => {
+  const current = loadHouseholds();
+  const existingIdx = current.findIndex((h) => h.familyCode === household.familyCode || h.id === household.id);
+  let updated: HouseholdData[];
+  if (existingIdx >= 0) {
+    updated = [...current];
+    updated[existingIdx] = household;
+  } else {
+    updated = [household, ...current];
+  }
+  saveHouseholds(updated);
+};
+
+export const clearAllHouseholds = () => {
+  setStoredData(STORAGE_KEYS.HOUSEHOLDS, []);
+  scheduleCentralSync();
+};
+
 // Super Admin Clear All Tools
 export const clearAllBeneficiaries = (): void => {
+  const current = getStoredData<Beneficiary[]>(STORAGE_KEYS.BENEFICIARIES, []);
+  recordDeletedIds(current.map((b) => b.id).concat(current.map((b) => b.nic)));
   setStoredData(STORAGE_KEYS.BENEFICIARIES, []);
-  scheduleCentralSync();
+  setStoredData('vaharai_ds_beneficiaries_cleared', 'true');
+  const snapshot = createDatabaseSnapshot();
+  pushToCentralDatabase(snapshot);
+  notifyCrossTabSync('ALL_BENEFICIARIES_CLEARED');
 };
 
 export const clearAllTokens = (): void => {
@@ -713,11 +1039,14 @@ export const createDatabaseSnapshot = () => {
     auditLogs: loadAuditLogs(),
     assistance: loadAssistanceRecords(),
     pregnantMothers: loadPregnantMothers(),
+    landRecords: loadLandRecords(),
+    households: loadHouseholds(),
+    povertyWeights: loadPovertyWeights(),
   };
 };
 
 export const restoreDatabaseFromSnapshot = (snapshot: any): boolean => {
-  if (!snapshot || !snapshot.beneficiaries || !snapshot.users) {
+  if (!snapshot || !Array.isArray(snapshot.users)) {
     throw new Error('Invalid backup file structure.');
   }
   if (Array.isArray(snapshot.users)) setStoredData(STORAGE_KEYS.USERS, snapshot.users);
@@ -727,6 +1056,9 @@ export const restoreDatabaseFromSnapshot = (snapshot: any): boolean => {
   if (Array.isArray(snapshot.assistance)) setStoredData(STORAGE_KEYS.ASSISTANCE, snapshot.assistance);
   if (Array.isArray(snapshot.auditLogs)) setStoredData(STORAGE_KEYS.AUDIT_LOGS, snapshot.auditLogs);
   if (Array.isArray(snapshot.pregnantMothers)) setStoredData(STORAGE_KEYS.PREGNANT_MOTHERS, snapshot.pregnantMothers);
+  if (Array.isArray(snapshot.landRecords)) setStoredData(STORAGE_KEYS.LAND_RECORDS, snapshot.landRecords);
+  if (Array.isArray(snapshot.households)) setStoredData(STORAGE_KEYS.HOUSEHOLDS, snapshot.households);
+  if (snapshot.povertyWeights) setStoredData(STORAGE_KEYS.POVERTY_WEIGHTS, snapshot.povertyWeights);
   
   notifyCrossTabSync('DATABASE_RESTORED');
   return true;

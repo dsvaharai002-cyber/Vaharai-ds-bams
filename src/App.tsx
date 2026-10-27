@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { User, Beneficiary, QueueToken, GNDivision, SystemAuditLog, AssistanceRecord, ServiceDefinition, PregnantMotherRecord } from './types';
+import {
+  User,
+  Beneficiary,
+  QueueToken,
+  GNDivision,
+  SystemAuditLog,
+  AssistanceRecord,
+  ServiceDefinition,
+  PregnantMotherRecord,
+  LandRecord,
+  HouseholdData,
+  PovertyScoringWeights,
+} from './types';
 import { Language } from './translations/i18n';
 import {
   loadUsers,
@@ -17,6 +29,13 @@ import {
   saveServices,
   loadPregnantMothers,
   savePregnantMothers,
+  loadLandRecords,
+  saveLandRecords,
+  loadHouseholds,
+  saveHouseholds,
+  loadPovertyWeights,
+  savePovertyWeights,
+  isRecordDeleted,
   fetchCentralDatabase,
   pushToCentralDatabase,
   restoreDatabaseFromSnapshot,
@@ -53,6 +72,8 @@ import { AssistanceDistributionView } from './components/AssistanceDistributionV
 import { ServiceManagementView } from './components/ServiceManagementView';
 import { ElderlyOfficerManagementView } from './components/ElderlyOfficerManagementView';
 import { PregnantMothersView } from './components/PregnantMothersView';
+import { LandManagementView } from './components/LandManagementView';
+import { FamilyDataCenterView } from './components/FamilyDataCenterView';
 import { UniversalCitizenSearchView } from './components/UniversalCitizenSearchView';
 import { BarcodeScannerModal } from './components/BarcodeScannerModal';
 import { StorageTransparencyModal } from './components/StorageTransparencyModal';
@@ -75,6 +96,9 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<SystemAuditLog[]>(() => loadAuditLogs());
   const [assistanceRecords, setAssistanceRecords] = useState<AssistanceRecord[]>(() => loadAssistanceRecords());
   const [pregnantMothers, setPregnantMothers] = useState<PregnantMotherRecord[]>(() => loadPregnantMothers());
+  const [landRecords, setLandRecords] = useState<LandRecord[]>(() => loadLandRecords());
+  const [households, setHouseholds] = useState<HouseholdData[]>(() => loadHouseholds());
+  const [povertyWeights, setPovertyWeights] = useState<PovertyScoringWeights>(() => loadPovertyWeights());
 
   // Cloud & Drive Sync Status State
   const [driveSyncStatus, setDriveSyncStatus] = useState<DriveSyncStatus>(() => getDriveSyncStatus());
@@ -97,7 +121,9 @@ export default function App() {
       const found = users.find((u) => u.id === session.id);
       if (found) {
         setCurrentUser(found);
-        if (found.role === 'Reception Registrar') {
+        if (found.role === 'LAND_OFFICER') {
+          setCurrentTab('land');
+        } else if (found.role === 'Reception Registrar') {
           setCurrentTab('reception');
         } else if (found.role === 'NORMAL') {
           setCurrentTab('live-display');
@@ -162,10 +188,12 @@ export default function App() {
       try {
         const driveData = await fetchFromDesignatedDriveFile();
         if (driveData && isMounted && Array.isArray(driveData.beneficiaries) && driveData.beneficiaries.length > 0) {
-          const localItems = loadBeneficiaries();
-          // Merge: Preserve all local newly added records, add any remote records
+          const localItems = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id || b.nic));
+          // Merge: Preserve all local newly added records, add any remote records that haven't been deleted
           const map = new Map<string, Beneficiary>();
-          driveData.beneficiaries.forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
+          driveData.beneficiaries
+            .filter((b: Beneficiary) => !isRecordDeleted(b.id || b.nic))
+            .forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
           localItems.forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
           const merged = Array.from(map.values());
           saveBeneficiaries(merged);
@@ -186,9 +214,11 @@ export default function App() {
           const central = await fetchCentralDatabase();
           if (central && isMounted) {
             if (Array.isArray(central.beneficiaries) && central.beneficiaries.length > 0) {
-              const localItems = loadBeneficiaries();
+              const localItems = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id || b.nic));
               const map = new Map<string, Beneficiary>();
-              central.beneficiaries.forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
+              central.beneficiaries
+                .filter((b: Beneficiary) => !isRecordDeleted(b.id || b.nic))
+                .forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
               localItems.forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
               const merged = Array.from(map.values());
               saveBeneficiaries(merged);
@@ -213,9 +243,11 @@ export default function App() {
         try {
           const driveData = await fetchFromDesignatedDriveFile();
           if (driveData && isMounted && Array.isArray(driveData.beneficiaries)) {
-            const local = loadBeneficiaries();
+            const local = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id || b.nic));
             const existingNics = new Set(local.map((b) => b.nic));
-            const newFromRemote = driveData.beneficiaries.filter((b: Beneficiary) => !existingNics.has(b.nic));
+            const newFromRemote = driveData.beneficiaries.filter(
+              (b: Beneficiary) => !isRecordDeleted(b.id || b.nic) && !existingNics.has(b.nic)
+            );
             if (newFromRemote.length > 0) {
               const merged = [...local, ...newFromRemote];
               saveBeneficiaries(merged);
@@ -235,10 +267,12 @@ export default function App() {
         try {
           const central = await fetchCentralDatabase();
           if (central && isMounted) {
-            const local = loadBeneficiaries();
+            const local = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id || b.nic));
             if (Array.isArray(central.beneficiaries) && central.beneficiaries.length > 0) {
               const existingNics = new Set(local.map((b) => b.nic));
-              const newFromCentral = central.beneficiaries.filter((b: Beneficiary) => !existingNics.has(b.nic));
+              const newFromCentral = central.beneficiaries.filter(
+                (b: Beneficiary) => !isRecordDeleted(b.id || b.nic) && !existingNics.has(b.nic)
+              );
               if (newFromCentral.length > 0) {
                 const merged = [...local, ...newFromCentral];
                 saveBeneficiaries(merged);
@@ -278,10 +312,18 @@ export default function App() {
   const handleLoginSuccess = (user: User) => {
     setCurrentUser(user);
     setActiveUserSession(user);
-    if (user.role === 'Reception Registrar') {
+    if (user.role === 'LAND_OFFICER') {
+      setCurrentTab('land');
+    } else if (user.role === 'Reception Registrar') {
       setCurrentTab('reception');
     } else if (user.role === 'NORMAL') {
       setCurrentTab('live-display');
+    } else if (user.role === 'ELDERLY_OFFICER') {
+      setCurrentTab('elderly');
+    } else if (user.role === 'MATERNITY_OFFICER' || user.role === 'ECDO') {
+      setCurrentTab('maternity');
+    } else if (user.role === 'DISABILITY_OFFICER') {
+      setCurrentTab('beneficiaries');
     } else {
       setCurrentTab('dashboard');
     }
@@ -342,6 +384,21 @@ export default function App() {
     savePregnantMothers(newRecords);
   };
 
+  const handleUpdateLandRecords = (newLand: LandRecord[]) => {
+    setLandRecords(newLand);
+    saveLandRecords(newLand);
+  };
+
+  const handleUpdateHouseholds = (newHouseholds: HouseholdData[]) => {
+    setHouseholds(newHouseholds);
+    saveHouseholds(newHouseholds);
+  };
+
+  const handleUpdatePovertyWeights = (weights: PovertyScoringWeights) => {
+    setPovertyWeights(weights);
+    savePovertyWeights(weights);
+  };
+
   const handleDatabaseReload = () => {
     setUsers(loadUsers());
     setBeneficiaries(loadBeneficiaries());
@@ -351,6 +408,9 @@ export default function App() {
     setAuditLogs(loadAuditLogs());
     setAssistanceRecords(loadAssistanceRecords());
     setPregnantMothers(loadPregnantMothers());
+    setLandRecords(loadLandRecords());
+    setHouseholds(loadHouseholds());
+    setPovertyWeights(loadPovertyWeights());
   };
 
   const handleQuickSyncNow = async () => {
@@ -498,27 +558,36 @@ export default function App() {
   const isElderlyOfficer = currentUser.role === 'ELDERLY_OFFICER';
   const isMaternityOfficer = currentUser.role === 'MATERNITY_OFFICER' || currentUser.role === 'ECDO';
   const isDisabilityOfficer = currentUser.role === 'DISABILITY_OFFICER';
+  const isLandOfficer = currentUser.role === 'LAND_OFFICER';
 
   const canAccessElderly = isAdmin || isElderlyOfficer || isGramaNiladhari;
   const canAccessMaternity = isAdmin || isMaternityOfficer || isGramaNiladhari;
+  const canAccessLand = isAdmin || isLandOfficer;
+  const canAccessFamilyCenter = !isReception && !isNormal && !isLandOfficer;
 
   let safeTab = currentTab;
   if (isNormal) {
     safeTab = 'live-display';
+  } else if (isLandOfficer && currentTab !== 'universal-search') {
+    safeTab = 'land';
   } else if (isElderlyOfficer && currentTab !== 'universal-search') {
     safeTab = 'elderly';
   } else if (isMaternityOfficer && currentTab !== 'universal-search') {
     safeTab = 'maternity';
   } else if (isDisabilityOfficer && currentTab !== 'universal-search') {
     safeTab = 'beneficiaries';
+  } else if (currentTab === 'land' && !canAccessLand) {
+    safeTab = 'dashboard';
+  } else if (currentTab === 'family-center' && !canAccessFamilyCenter) {
+    safeTab = 'dashboard';
   } else if (currentTab === 'staff' && !isSuperAdmin) {
     safeTab = 'dashboard';
   } else if (currentTab === 'services' && !isSuperAdmin) {
     safeTab = 'dashboard';
   } else if (currentTab === 'beneficiaries' && isReception) {
     safeTab = 'reception';
-  } else if (currentTab === 'assistance' && (isReception || isNormal)) {
-    safeTab = 'dashboard';
+  } else if (currentTab === 'assistance' && (isReception || isNormal || isLandOfficer)) {
+    safeTab = isLandOfficer ? 'land' : 'dashboard';
   } else if (currentTab === 'drive' && !isAdmin) {
     safeTab = 'dashboard';
   } else if (currentTab === 'ai-report' && !isAdmin) {
@@ -703,6 +772,34 @@ export default function App() {
           />
         )}
 
+        {safeTab === 'family-center' && (
+          <FamilyDataCenterView
+            households={households}
+            beneficiaries={beneficiaries}
+            assistanceRecords={assistanceRecords}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+            povertyWeights={povertyWeights}
+            onUpdateHouseholds={handleUpdateHouseholds}
+            onUpdateBeneficiaries={handleUpdateBeneficiaries}
+            onUpdatePovertyWeights={handleUpdatePovertyWeights}
+            onAuditLog={handleAuditLog}
+          />
+        )}
+
+        {safeTab === 'land' && (
+          <LandManagementView
+            landRecords={landRecords}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdateLandRecords={handleUpdateLandRecords}
+            onAuditLog={handleAuditLog}
+            onNavigateToCsv={() => setCurrentTab('csv')}
+          />
+        )}
+
         {safeTab === 'csv' && (
           <CsvManagementView
             beneficiaries={beneficiaries}
@@ -710,12 +807,14 @@ export default function App() {
             divisions={divisions}
             assistanceRecords={assistanceRecords}
             pregnantMothers={pregnantMothers}
+            landRecords={landRecords}
             currentUser={currentUser}
             lang={lang}
             onUpdateBeneficiaries={handleUpdateBeneficiaries}
             onUpdateUsers={handleUpdateUsers}
             onUpdateAssistanceRecords={handleUpdateAssistanceRecords}
             onUpdatePregnantMothers={handleUpdatePregnantMothers}
+            onUpdateLandRecords={handleUpdateLandRecords}
             onAuditLog={handleAuditLog}
           />
         )}

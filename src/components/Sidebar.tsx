@@ -27,6 +27,8 @@ import {
   Search,
   HeartHandshake,
   Baby,
+  Compass,
+  Home,
 } from 'lucide-react';
 import { DriveSyncStatus } from '../services/googleDrive';
 
@@ -72,16 +74,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isElderlyOfficer = currentUser?.role === 'ELDERLY_OFFICER';
   const isMaternityOfficer = currentUser?.role === 'MATERNITY_OFFICER' || currentUser?.role === 'ECDO';
   const isDisabilityOfficer = currentUser?.role === 'DISABILITY_OFFICER';
+  const isLandOfficer = currentUser?.role === 'LAND_OFFICER';
 
   const canAccessStaff = isSuperAdmin;
   const canAccessDrive = isAdmin;
   const canAccessAi = isAdmin;
-  const canAccessBeneficiaries = !isReception && !isNormal && !isElderlyOfficer && !isMaternityOfficer;
-  const canAccessElderly = isAdmin || isElderlyOfficer || isGramaNiladhari;
-  const canAccessMaternity = isAdmin || isMaternityOfficer || isGramaNiladhari;
-  const canAccessCsv = (isAdmin || currentUser?.role === 'DATAENRY OFFCER') && !isNormal;
-  const canAccessDashboard = !isNormal && !isElderlyOfficer && !isMaternityOfficer;
-  const canAccessReception = !isNormal && !isElderlyOfficer && !isMaternityOfficer;
+  const canAccessLand = isAdmin || isLandOfficer;
+  const canAccessFamilyCenter = !isReception && !isNormal && !isLandOfficer;
+  const canAccessBeneficiaries = !isReception && !isNormal && !isElderlyOfficer && !isMaternityOfficer && !isLandOfficer;
+  const canAccessElderly = (isAdmin || isElderlyOfficer || isGramaNiladhari) && !isLandOfficer;
+  const canAccessMaternity = (isAdmin || isMaternityOfficer || isGramaNiladhari) && !isLandOfficer;
+  const canAccessCsv = (isAdmin || currentUser?.role === 'DATAENRY OFFCER') && !isNormal && !isLandOfficer;
+  const canAccessDashboard = !isNormal && !isElderlyOfficer && !isMaternityOfficer && !isLandOfficer;
+  const canAccessReception = !isNormal && !isElderlyOfficer && !isMaternityOfficer && !isLandOfficer;
   const canAccessUniversalSearch = !isNormal;
 
   const publicServiceItems = [
@@ -106,13 +111,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           },
         ]
       : []),
-    {
-      id: 'live-display',
-      title: t.navLiveDisplay,
-      subtitle: lang === 'ta' ? 'அழைப்பு ஒலி & டிவி' : 'Live Counter TV',
-      icon: Tv,
-      badge: lang === 'ta' ? 'நேரலை' : 'Live',
-    },
+    ...(!isLandOfficer
+      ? [
+          {
+            id: 'live-display',
+            title: t.navLiveDisplay,
+            subtitle: lang === 'ta' ? 'அழைப்பு ஒலி & டிவி' : 'Live Counter TV',
+            icon: Tv,
+            badge: lang === 'ta' ? 'நேரலை' : 'Live',
+          },
+        ]
+      : []),
     ...(!isNormal
       ? [
           {
@@ -127,6 +136,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const registryItems = [
+    ...(canAccessFamilyCenter
+      ? [
+          {
+            id: 'family-center',
+            title: lang === 'ta' ? 'குடும்ப தரவு மையம்' : 'Family Data Center',
+            subtitle: lang === 'ta' ? '100 புள்ளி வறுமை மதிப்பீடு' : '100-Point Scoring & Dossier',
+            icon: Home,
+            badge: '100 Pts',
+          },
+        ]
+      : []),
+    ...(canAccessLand
+      ? [
+          {
+            id: 'land',
+            title: lang === 'ta' ? 'காணிப் பிரிவு' : 'Land Records',
+            subtitle: lang === 'ta' ? 'காணி உறுதி, அனுமதிப்பத்திரம்' : 'Permits, LDO & Grants',
+            icon: Compass,
+            badge: lang === 'ta' ? 'காணி' : 'Land',
+          },
+        ]
+      : []),
     ...(canAccessElderly
       ? [
           {
@@ -163,7 +194,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           },
         ]
       : []),
-    ...(!isReception && !isNormal && !isElderlyOfficer && !isMaternityOfficer
+    ...(!isReception && !isNormal && !isElderlyOfficer && !isMaternityOfficer && !isLandOfficer
       ? [
           {
             id: 'assistance',
@@ -184,7 +215,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           },
         ]
       : []),
-    ...(canAccessAi
+    ...(canAccessAi && !isLandOfficer
       ? [
           {
             id: 'ai-report',

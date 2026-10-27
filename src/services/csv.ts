@@ -12,6 +12,9 @@ import {
   FamilyRelationship,
   PregnantMotherRecord,
   DisabilityCause,
+  LandRecord,
+  LandType,
+  LandPermitStatus,
 } from '../types';
 import { 
   generateSystemCitizenId, 
@@ -1316,7 +1319,14 @@ export const generateAssistanceSampleCsv = (): string => {
 export const parseAssistanceFromCsv = (
   csvText: string,
   existingAssistance: AssistanceRecord[],
-  existingBeneficiaries: Beneficiary[]
+  existingBeneficiaries: Beneficiary[],
+  batchInfo?: {
+    programBatchId?: string;
+    programTitle?: string;
+    donor?: string;
+    date?: string;
+    category?: AidCategory;
+  }
 ): {
   validRecords: AssistanceRecord[];
   duplicateRecords: AssistanceRecord[];
@@ -1333,7 +1343,7 @@ export const parseAssistanceFromCsv = (
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (row.length < 4 || !row.some((cell) => cell.trim())) continue;
+    if (row.length < 3 || !row.some((cell) => cell.trim())) continue;
 
     const [
       aidIdRaw,
@@ -1353,9 +1363,13 @@ export const parseAssistanceFromCsv = (
     const familyCode = familyCodeRaw?.trim().toUpperCase() || '';
     const nic = nicRaw?.trim() || '';
     const divisionCode = divisionRaw?.trim() || '211';
-    const aidCategory = (categoryRaw?.trim().toUpperCase() || 'OTHER') as AidCategory;
-    const distributedDate = dateRaw?.trim() || new Date().toISOString().slice(0, 10);
-    const id = aidIdRaw?.trim() || `AID-${Date.now()}-${i}`;
+    const aidCategory = (batchInfo?.category || categoryRaw?.trim().toUpperCase() || 'DRY_RATIONS') as AidCategory;
+    const distributedDate = batchInfo?.date || dateRaw?.trim() || new Date().toISOString().slice(0, 10);
+    
+    // Auto-generate ID using batch ID if provided
+    const id = batchInfo?.programBatchId
+      ? `${batchInfo.programBatchId}-${String(i).padStart(3, '0')}`
+      : (aidIdRaw?.trim() || `AID-${Date.now()}-${i}`);
 
     // Lookup beneficiary for auto-completion if name not given
     const matchedBeneficiary = existingBeneficiaries.find(
@@ -1364,6 +1378,10 @@ export const parseAssistanceFromCsv = (
 
     const beneficiaryName = nameRaw?.trim() || matchedBeneficiary?.nameTa || matchedBeneficiary?.nameEn || 'பயனாளி';
     const familyQrPayload = matchedBeneficiary?.familyQrPayload || generateUniqueFamilyQrPayload(familyCode, divisionCode);
+
+    // Apply batch program title if provided
+    const aidDescription = batchInfo?.programTitle || descRaw?.trim() || 'அத்தியாவசிய உதவி / நிவாரண விநியோகம்';
+    const donorOrOrganization = batchInfo?.donor || donorRaw?.trim() || 'பிரதேச செயலகம் வாகரை';
 
     // Run Duplicate Prevention Engine on this row!
     const duplicateCheck = checkDuplicateAssistance(
@@ -1381,16 +1399,16 @@ export const parseAssistanceFromCsv = (
       beneficiaryName,
       divisionCode,
       aidCategory,
-      aidDescription: descRaw?.trim() || 'அத்தியாவசிய உதவி / நிவாரணம்',
+      aidDescription,
       amountOrValue: amountRaw?.trim() || 'வழங்கப்பட்டது',
-      donorOrOrganization: donorRaw?.trim() || 'பிரதேச செயலகம் வாகரை',
+      donorOrOrganization,
       distributedDate,
       officerName: officerRaw?.trim() || 'நிவாரண அலுவலர்',
       officerId: 'OFFICER',
       status: duplicateCheck.hasDuplicateRisk ? 'REJECTED_DUPLICATE' : 'DISTRIBUTED',
       isDuplicate: duplicateCheck.hasDuplicateRisk,
       duplicateWarningReason: duplicateCheck.hasDuplicateRisk ? duplicateCheck.warningMessageTa : undefined,
-      notes: notesRaw?.trim() || '',
+      notes: notesRaw?.trim() || (batchInfo?.programBatchId ? `Batch: ${batchInfo.programBatchId}` : ''),
       createdAt: new Date().toISOString(),
     };
 
@@ -1464,3 +1482,172 @@ export function escapeCsv(value: string | number | undefined | null): string {
   }
   return str;
 }
+
+// ================= LAND BRANCH CSV (காணி கிளை மாதிரி & அப்லோட்) (Requirement 05) ================= //
+export const LAND_CSV_HEADERS = [
+  'Permit_No',
+  'Lot_No',
+  'Plan_No',
+  'Extent',
+  'Land_Type',
+  'GN_Division',
+  'Owner_NIC',
+  'Owner_Name_Tamil',
+  'Owner_Name_English',
+  'Phone',
+  'Family_Code',
+  'Permit_Status',
+  'Issue_Date',
+  'Annual_Tax_Status',
+  'North_Boundary',
+  'South_Boundary',
+  'East_Boundary',
+  'West_Boundary',
+  'Notes'
+];
+
+export const generateLandSampleCsv = (): string => {
+  const sampleRows = [
+    LAND_CSV_HEADERS.join(','),
+    'LDO/211/2024/042,14-B,BCO/VHR/2023/118,0A-1R-20P,CROWN_PERMIT,211,741239845V,கணபதிப்பிள்ளை சிவலிங்கம்,Kanapathipillai Sivalingam,0771234567,FAM-211-001,PERMIT_ISSUED,2024-05-12,PAID,"வீதி (Public Road)","முருகேசு காணி","வாய்க்கால் (Canal)","அரச காணி (Crown Land)",அரச காணி அனுமதிப்பத்திரம் ஒழுங்காக புதுப்பிக்கப்பட்டுள்ளது',
+    'LDO/211A/2025/089,28,BCO/VHR/2024/204,1A-0R-00P,AGRICULTURAL,211A,891902697V,சின்னப்பு விஜயகுமார்,Sinnappu Vijayakumar,0760539158,FAM-211-042,PENDING_APPROVAL,2025-08-19,DUE,"காயான்கேணி வீதி","வயல் வெளி","அரச காணி","தவராசா காணி",அனுமதிப்பத்திர எல்லை மீளளவீடு செய்யப்பட வேண்டும்',
+    'LDO/212/2024/015,07,BCO/VHR/2022/054,0A-2R-10P,RESIDENTIAL,212,195531200194,பொன்னம்பலம் செல்லையா,Ponnambalam Chelliah,0714567890,FAM-212-019,PERMIT_ISSUED,2022-11-04,PAID,"கோவில் வீதி","பாடசாலை எல்லை","பொது ஒழுங்கை","சிதம்பரப்பிள்ளை காணி",குடியிருப்பு காணி உறுதி',
+    'LDO/213/2025/112,45,BCO/VHR/2025/088,2A-0R-00P,PADDY_FIELD,213,197821500984,கதிர்காமர் சிவலிங்கம்,Kathirkamar Sivalingam,0773344556,FAM-213-022,SETTLEMENT_STAGE,2025-02-14,DUE,"பிரதான கால்வாய்","கதிரவெளி வயல்","அரச காணி","இராமலிங்கம் வயல்",காணி கச்சேரி தீர்வு நடவடிக்கை'
+  ];
+  return sampleRows.join('\n');
+};
+
+export const parseLandFromCsv = (
+  csvText: string,
+  existingLand: LandRecord[] = []
+): { items: LandRecord[]; errors: string[] } => {
+  const rows = parseCsvContent(csvText);
+  if (rows.length < 2) return { items: [], errors: ['CSV file is empty or missing data rows.'] };
+
+  const items: LandRecord[] = [];
+  const errors: string[] = [];
+  const headers = rows[0].map((h) => h.trim().toLowerCase());
+
+  const colIndex = {
+    permitNo: headers.findIndex((h) => h.includes('permit')),
+    lotNo: headers.findIndex((h) => h.includes('lot')),
+    planNo: headers.findIndex((h) => h.includes('plan')),
+    extent: headers.findIndex((h) => h.includes('extent') || h.includes('area')),
+    landType: headers.findIndex((h) => h.includes('type')),
+    division: headers.findIndex((h) => h.includes('division') || h.includes('gn')),
+    nic: headers.findIndex((h) => h.includes('nic')),
+    nameTa: headers.findIndex((h) => h.includes('name_tamil') || h.includes('tamil') || h === 'name' || h === 'owner_name'),
+    nameEn: headers.findIndex((h) => h.includes('name_english') || h.includes('english')),
+    phone: headers.findIndex((h) => h.includes('phone') || h.includes('mobile')),
+    familyCode: headers.findIndex((h) => h.includes('family') || h.includes('fam')),
+    status: headers.findIndex((h) => h.includes('status')),
+    issueDate: headers.findIndex((h) => h.includes('date')),
+    taxStatus: headers.findIndex((h) => h.includes('tax')),
+    north: headers.findIndex((h) => h.includes('north')),
+    south: headers.findIndex((h) => h.includes('south')),
+    east: headers.findIndex((h) => h.includes('east')),
+    west: headers.findIndex((h) => h.includes('west')),
+    notes: headers.findIndex((h) => h.includes('note') || h.includes('remark')),
+  };
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.length < 3 || !row.some((c) => c.trim())) continue;
+
+    const divisionCode = (colIndex.division !== -1 ? row[colIndex.division] : row[5])?.trim() || '211';
+    const permitNo = (colIndex.permitNo !== -1 ? row[colIndex.permitNo] : row[0])?.trim() || `LDO/${divisionCode}/${new Date().getFullYear()}/${String(existingLand.length + items.length + 1).padStart(3, '0')}`;
+    const lotNo = (colIndex.lotNo !== -1 ? row[colIndex.lotNo] : row[1])?.trim() || `${i}`;
+    const planNo = (colIndex.planNo !== -1 ? row[colIndex.planNo] : row[2])?.trim() || `BCO/VHR/${new Date().getFullYear()}/${String(i).padStart(3, '0')}`;
+    const extent = (colIndex.extent !== -1 ? row[colIndex.extent] : row[3])?.trim() || '0A-1R-00P';
+    
+    const typeRaw = ((colIndex.landType !== -1 ? row[colIndex.landType] : row[4]) || '').toUpperCase();
+    let landType: LandType = 'CROWN_PERMIT';
+    if (typeRaw.includes('AGRI')) landType = 'AGRICULTURAL';
+    else if (typeRaw.includes('RESIDEN')) landType = 'RESIDENTIAL';
+    else if (typeRaw.includes('COMMERC')) landType = 'COMMERCIAL';
+    else if (typeRaw.includes('PADDY') || typeRaw.includes('வயல்')) landType = 'PADDY_FIELD';
+    else if (typeRaw.includes('DISPUT')) landType = 'DISPUTED_LAND';
+
+    const ownerNic = (colIndex.nic !== -1 ? row[colIndex.nic] : row[6])?.trim() || '';
+    const ownerNameTa = (colIndex.nameTa !== -1 ? row[colIndex.nameTa] : row[7])?.trim() || 'காணி உரிமையாளர்';
+    const ownerNameEn = (colIndex.nameEn !== -1 ? row[colIndex.nameEn] : row[8])?.trim() || ownerNameTa;
+    const ownerPhone = (colIndex.phone !== -1 ? row[colIndex.phone] : row[9])?.trim() || '';
+    const familyCode = (colIndex.familyCode !== -1 ? row[colIndex.familyCode] : row[10])?.trim().toUpperCase() || `FAM-${divisionCode}-001`;
+
+    const statusRaw = ((colIndex.status !== -1 ? row[colIndex.status] : row[11]) || '').toUpperCase();
+    let permitStatus: LandPermitStatus = 'PERMIT_ISSUED';
+    if (statusRaw.includes('PENDING') || statusRaw.includes('காத்திருப்பு')) permitStatus = 'PENDING_APPROVAL';
+    else if (statusRaw.includes('DISPUT') || statusRaw.includes('பிணக்கு')) permitStatus = 'IN_DISPUTE';
+    else if (statusRaw.includes('SETTLE') || statusRaw.includes('கச்சேரி') || statusRaw.includes('தீர்வு')) permitStatus = 'SETTLEMENT_STAGE';
+    else if (statusRaw.includes('CANCEL')) permitStatus = 'CANCELLED';
+
+    const issueDate = (colIndex.issueDate !== -1 ? row[colIndex.issueDate] : row[12])?.trim() || new Date().toISOString().slice(0, 10);
+    const taxRaw = ((colIndex.taxStatus !== -1 ? row[colIndex.taxStatus] : row[13]) || '').toUpperCase();
+    const annualTaxStatus = taxRaw.includes('DUE') ? 'DUE' : taxRaw.includes('EXEMPT') ? 'EXEMPT' : 'PAID';
+
+    const north = (colIndex.north !== -1 ? row[colIndex.north] : row[14])?.trim() || '';
+    const south = (colIndex.south !== -1 ? row[colIndex.south] : row[15])?.trim() || '';
+    const east = (colIndex.east !== -1 ? row[colIndex.east] : row[16])?.trim() || '';
+    const west = (colIndex.west !== -1 ? row[colIndex.west] : row[17])?.trim() || '';
+    const notes = (colIndex.notes !== -1 ? row[colIndex.notes] : row[18])?.trim() || 'காணி கிளை CSV பதிவு';
+
+    const id = `LND-${divisionCode}-${new Date().getFullYear()}-${String(existingLand.length + items.length + 1).padStart(3, '0')}`;
+
+    items.push({
+      id,
+      permitNo,
+      lotNo,
+      planNo,
+      extent,
+      landType,
+      divisionCode,
+      ownerNic,
+      ownerNameTa,
+      ownerNameEn,
+      ownerPhone,
+      familyCode,
+      permitStatus,
+      issueDate,
+      annualTaxStatus,
+      boundaries: {
+        north,
+        south,
+        east,
+        west,
+      },
+      notes,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  return { items, errors };
+};
+
+export const exportLandToCsv = (records: LandRecord[]): string => {
+  const lines = [LAND_CSV_HEADERS.join(',')];
+  for (const r of records) {
+    lines.push([
+      escapeCsv(r.permitNo),
+      escapeCsv(r.lotNo),
+      escapeCsv(r.planNo),
+      escapeCsv(r.extent),
+      escapeCsv(r.landType),
+      escapeCsv(r.divisionCode),
+      escapeCsv(r.ownerNic),
+      escapeCsv(r.ownerNameTa),
+      escapeCsv(r.ownerNameEn),
+      escapeCsv(r.ownerPhone || ''),
+      escapeCsv(r.familyCode || ''),
+      escapeCsv(r.permitStatus),
+      escapeCsv(r.issueDate || ''),
+      escapeCsv(r.annualTaxStatus || 'PAID'),
+      escapeCsv(r.boundaries?.north || ''),
+      escapeCsv(r.boundaries?.south || ''),
+      escapeCsv(r.boundaries?.east || ''),
+      escapeCsv(r.boundaries?.west || ''),
+      escapeCsv(r.notes || '')
+    ].join(','));
+  }
+  return lines.join('\n');
+};

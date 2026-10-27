@@ -57,36 +57,49 @@ export default function handler(req: any, res: any) {
         success: true,
         data,
         source: inMemorySnapshot ? 'serverless_cache' : 'seed_database',
-        mode: 'vercel_serverless',
+        mode: 'express_central',
       });
     }
 
     if (req.method === 'POST') {
       const snapshot = req.body;
-      if (!snapshot || !snapshot.beneficiaries || !snapshot.users) {
+      if (!snapshot || !Array.isArray(snapshot.beneficiaries) || !Array.isArray(snapshot.users)) {
         return res.status(400).json({ success: false, error: 'Invalid database snapshot format' });
       }
 
       snapshot.lastServerSync = new Date().toISOString();
       inMemorySnapshot = snapshot;
 
-      // Try persisting to disk if writable (local dev / Docker / full-stack server)
+      // Try persisting to disk if writable (writes to both data and src/data)
       try {
         const cwd = process.cwd();
-        const dataPath = path.join(cwd, 'data', 'central_database.json');
-        if (fs.existsSync(path.dirname(dataPath))) {
-          fs.writeFileSync(dataPath, JSON.stringify(snapshot, null, 2), 'utf-8');
+        const targets = [
+          path.join(cwd, 'data', 'central_database.json'),
+          path.join(cwd, 'src', 'data', 'central_database.json'),
+        ];
+        for (const dataPath of targets) {
+          try {
+            const dir = path.dirname(dataPath);
+            if (!fs.existsSync(dir)) {
+              fs.mkdirSync(dir, { recursive: true });
+            }
+            fs.writeFileSync(dataPath, JSON.stringify(snapshot, null, 2), 'utf-8');
+          } catch (writeErr) {
+            console.warn(`Could not write to ${dataPath}:`, writeErr);
+          }
         }
-      } catch {
-        // Read-only filesystem is expected on Vercel serverless; in-memory cache remains active
+      } catch (err) {
+        console.warn('Central database disk write error:', err);
       }
 
       return res.status(200).json({
         success: true,
-        message: 'Central database received by Vercel serverless API',
+        message: 'Central database updated successfully',
         lastServerSync: snapshot.lastServerSync,
         counts: {
           citizens: snapshot.beneficiaries?.length || 0,
+          households: snapshot.households?.length || 0,
+          landRecords: snapshot.landRecords?.length || 0,
           tokens: snapshot.tokens?.length || 0,
           users: snapshot.users?.length || 0,
         },

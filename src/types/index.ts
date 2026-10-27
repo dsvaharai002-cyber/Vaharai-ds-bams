@@ -11,7 +11,8 @@ export type Role =
   | 'ELDERLY_OFFICER' // முதியோர் நலன்புரி உத்தியோகத்தர் (Senior Citizens Welfare Officer)
   | 'DISABILITY_OFFICER' // அங்கவீனர் பதிவாளர் (Disability Rights Officer)
   | 'WHH_OFFICER' // பெண் தலைமைத்துவ குடும்பங்கள் பதிவாளர் (Women-Headed Household Officer)
-  | 'SAMURDHI_OFFICER'; // சமுர்த்தி அபிவிருத்தி உத்தியோகத்தர் (Samurdhi Development Officer)
+  | 'SAMURDHI_OFFICER' // சமுர்த்தி அபிவிருத்தி உத்தியோகத்தர் (Samurdhi Development Officer)
+  | 'LAND_OFFICER'; // காணி உத்தியோகத்தர் (Land Branch Officer)
 
 export type UserRole = Role;
 
@@ -363,3 +364,278 @@ export interface PregnantMotherRecord {
   updatedAt: string;
 }
 
+// ================= LAND BRANCH MANAGEMENT TYPES (Requirement 05) ================= //
+export type LandType = 
+  | 'CROWN_PERMIT'      // அரச அனுமதிப்பத்திர காணி (LDO Permit Land)
+  | 'AGRICULTURAL'      // விவசாய மானாவாரி / நீர்ப்பாசன காணி
+  | 'RESIDENTIAL'       // குடியிருப்பு காணி
+  | 'COMMERCIAL'        // வர்த்தக காணி
+  | 'PADDY_FIELD'       // நன்செய் வயல் காணி
+  | 'DISPUTED_LAND';    // பிணக்குக்குரிய காணி
+
+export type LandPermitStatus = 
+  | 'PERMIT_ISSUED'      // அனுமதிப்பத்திரம் வழங்கப்பட்டது (Permit Granted)
+  | 'PENDING_APPROVAL'   // அனுமதிக்கு காத்திருப்பு (Pending DS Approval)
+  | 'IN_DISPUTE'         // காணி பிணக்கு நிலுவையில் (Land Dispute Active)
+  | 'SETTLEMENT_STAGE'   // காணி கச்சேரி / தீர்வு கட்டம் (Land Kachcheri Settlement)
+  | 'CANCELLED';         // ரத்து செய்யப்பட்டது
+
+export interface LandRecord {
+  id: string; // e.g. "LND-211-2026-001"
+  permitNo: string; // e.g. "LDO/211/2024/089"
+  lotNo: string; // காணித் துண்டு இலக்கம்
+  planNo: string; // வரைபட இலக்கம்
+  extent: string; // விஸ்தீரணம் (e.g. "0A-1R-20P" or "0.5 Acres")
+  landType: LandType;
+  divisionCode: string; // GN Division e.g. "211"
+  ownerNic: string; // உரிமையாளர் NIC
+  ownerNameTa: string; // உரிமையாளர் பெயர் (தமிழ்)
+  ownerNameEn: string; // உரிமையாளர் பெயர் (ஆங்கிலம்)
+  ownerPhone?: string;
+  familyCode?: string; // குடும்ப குறியீடு (FAM-xxx)
+  permitStatus: LandPermitStatus;
+  issueDate?: string;
+  annualTaxStatus?: 'PAID' | 'DUE' | 'EXEMPT';
+  boundaries?: {
+    north: string;
+    south: string;
+    east: string;
+    west: string;
+  };
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ================= HOUSEHOLD DATA & 100-POINT POVERTY SCORING ENGINE (Requirements 02, 04, 08) ================= //
+export interface HouseholdCommonAssets {
+  // Section 02: நிலம் மற்றும் கட்டிட சொத்துக்கள்
+  ownsLand: boolean; // 2.1
+  landExtent: 'LESS_THAN_HALF_ACRE' | 'MORE_THAN_HALF_ACRE' | 'NONE';
+  ownsOtherLand: boolean; // 2.2
+  otherLandExtent: 'LESS_THAN_ONE_ACRE' | 'MORE_THAN_ONE_ACRE' | 'NONE';
+
+  // Section 03: பிற சொத்துக்கள்
+  vehicleType: 'NONE' | 'MOTORCYCLE' | 'THREE_WHEELER' | 'CAR' | 'VAN_JEEP' | 'BUS' | 'LORRY' | 'HAND_TRACTOR' | 'FOUR_WHEEL_TRACTOR'; // 3.1
+  machineryType: 'NONE' | 'MOTOR_BOAT' | 'NON_MOTOR_BOAT' | 'HARVESTER' | 'OTHER_EQUIPMENT'; // 3.2
+  livestockType: 'NONE' | 'CATTLE' | 'GOATS' | 'PIGS' | 'POULTRY' | 'DUCKS' | 'OTHER'; // 3.3
+  livestockCount: number;
+
+  // Section 04: கடந்த மாத செலவுகள் (Expenses Rs.)
+  expenses: {
+    food: number;
+    water: number;
+    clothing: number;
+    medical: number;
+    rent: number;
+    transport: number;
+    electricity: number;
+    fuelGas: number;
+    telecom: number;
+    education: number;
+    religiousLeisure: number;
+    loansDebt: number;
+    total: number;
+  };
+
+  // Section 05: கடந்த மாத வருமானம் (Income Rs.)
+  income: {
+    unstableSources: number;
+    salary: number;
+    business: number;
+    agriculture: number;
+    rent: number;
+    pension: number;
+    samurdhi: number;
+    elderlyAid: number;
+    disabilityAid: number;
+    ckdAid: number;
+    foreignRemittance: number;
+    localRemittance: number;
+    otherGovAid: number;
+    other: number;
+    total: number;
+  };
+
+  // Section 06: மின்சார அலகுகள் (kWh)
+  electricityUnitsKwh: number;
+
+  // Section 07: வீடு பற்றிய விபரங்கள்
+  unitType: 'SINGLE_1_STORY' | 'SINGLE_2_STORY' | 'ANNEX' | 'SLUM_SHACK' | 'LINE_ROOM' | 'OTHER'; // 7.1
+  floorMaterial: 'CEMENT' | 'TILES' | 'CONCRETE' | 'CLAY' | 'SAND' | 'DILAPIDATED'; // 7.2
+  roofMaterial: 'TILES' | 'ASBESTOS' | 'CONCRETE' | 'SHEET_ALUMINIUM' | 'THATCH_PALM' | 'DILAPIDATED'; // 7.3
+  wallMaterial: 'BRICK' | 'CABOOK' | 'CEMENT_BLOCK' | 'CLAY_MUD' | 'PLANK' | 'PALM_LEAF' | 'DILAPIDATED'; // 7.4
+  houseArea: 'LESS_THAN_500_SQFT' | 'MORE_THAN_500_SQFT'; // 7.5
+  ownsCurrentHouse: boolean; // 8.1
+  ownsOtherHouse: boolean; // 8.2
+
+  // Section 09: ஒளி பெறும் முறை
+  lightingSource: 'KEROSENE' | 'GRID_ELECTRICITY' | 'SOLAR' | 'GENERATOR_BATTERY';
+
+  // Section 10: குடிநீர் ஆதாரம்
+  waterSource: 'PROTECTED_WELL' | 'UNPROTECTED_WELL' | 'NWSDB_TAP' | 'COMMUNITY_TAP' | 'TUBE_WELL' | 'RIVER_TANK' | 'RAINWATER' | 'BOTTLED_RO';
+
+  // Section 11 & 12: கழிப்பறை
+  toiletLocation: 'INDOOR_EXCLUSIVE' | 'SHARED' | 'OUTDOOR_EXCLUSIVE' | 'PUBLIC' | 'OPEN_DEFECATION';
+  toiletNature: 'WATER_SEAL_SEPTIC' | 'WATER_SEAL_PIT' | 'POUR_FLUSH' | 'DIRECT_PIT_SLAB' | 'OPEN_PIT_NO_SLAB' | 'NO_TOILET';
+
+  // Section 13: தாய் அல்லது தந்தை மாத்திரம் உள்ள குடும்பம் (Single Parent)
+  isSingleParent: boolean;
+}
+
+export interface BankDetails {
+  bankName: string;
+  branch: string;
+  accountNumber: string;
+  accountName: string;
+  status: 'VERIFIED' | 'PENDING' | 'REJECTED';
+}
+
+export interface HouseholdData {
+  id: string; // e.g. "HH-5-1-03-01-010-00435"
+  familyCode: string; // e.g. "FAM-211-042"
+  householdReference: string; // Official reference
+  applicationReference: string; // e.g. "20250515-4622119"
+  applicantNameTa: string; // e.g. "சின்னப்பு விஜயகுமார்"
+  applicantNameEn: string; // e.g. "SINNAPPU VIJAYAKUMAR"
+  applicantNic: string; // e.g. "891902697V"
+  phone: string; // e.g. "0760539158"
+  address: string; // e.g. "SELVAPURAM KAYANKERNI"
+  divisionCode: string; // e.g. "211A"
+  status: 'DS_ENDORSED' | 'COMMITTEE_APPROVED' | 'GRIEVANCE_PENDING' | 'ACTIVE';
+  selectedCategory: 'VULNERABLE' | 'EXTREME_POOR' | 'POOR' | 'TRANSITIONAL' | 'NON_VULNERABLE';
+  objectionsStatus?: string; // e.g. "OC-08-10-2025-69523 [Completed]"
+  appealsStatus?: string;
+  bankDetails: BankDetails;
+  commonAssets: HouseholdCommonAssets;
+  totalMembersCount: number;
+  familyQrPayload: string;
+  // 100-Point Poverty Assessment Result
+  score100: number; // 0 to 100
+  priorityRank: 1 | 2 | 3 | 4; // 1 = Highest Priority (Emergency/Extreme), 4 = Non-vulnerable
+  scoreBreakdown: {
+    housingScore: number; // max 25
+    sanitationScore: number; // max 20
+    demographicsScore: number; // max 25
+    economicScore: number; // max 30
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Configurable Poverty Weights Schema for Super Admin
+export interface PovertyScoringWeights {
+  housingMax: number; // default 25
+  sanitationMax: number; // default 20
+  demographicsMax: number; // default 25
+  economicMax: number; // default 30
+  // Item weights
+  thatchRoofPoints: number; // 8
+  mudWallPoints: number; // 7
+  sandFloorPoints: number; // 5
+  smallHouseAreaPoints: number; // 5
+  noLandPoints: number; // 5
+  noToiletPoints: number; // 8
+  unprotectedWaterPoints: number; // 6
+  keroseneLightingPoints: number; // 6
+  singleParentPoints: number; // 8
+  disabilityMemberPoints: number; // 7
+  chronicIllnessPoints: number; // 5
+  elderlyMemberPoints: number; // 5
+  lowIncomePoints: number; // 15
+  noVehiclePoints: number; // 5
+  dailyWageLaborPoints: number; // 10
+}
+
+export const DEFAULT_POVERTY_WEIGHTS: PovertyScoringWeights = {
+  housingMax: 25,
+  sanitationMax: 20,
+  demographicsMax: 25,
+  economicMax: 30,
+  thatchRoofPoints: 8,
+  mudWallPoints: 7,
+  sandFloorPoints: 5,
+  smallHouseAreaPoints: 5,
+  noLandPoints: 5,
+  noToiletPoints: 8,
+  unprotectedWaterPoints: 6,
+  keroseneLightingPoints: 6,
+  singleParentPoints: 8,
+  disabilityMemberPoints: 7,
+  chronicIllnessPoints: 5,
+  elderlyMemberPoints: 5,
+  lowIncomePoints: 15,
+  noVehiclePoints: 5,
+  dailyWageLaborPoints: 10,
+};
+
+// 100-Point Scoring Function
+export const calculateFamilyPovertyScore = (
+  common: HouseholdCommonAssets,
+  members: Beneficiary[] = [],
+  weights: PovertyScoringWeights = DEFAULT_POVERTY_WEIGHTS
+): { score100: number; priorityRank: 1 | 2 | 3 | 4; breakdown: { housingScore: number; sanitationScore: number; demographicsScore: number; economicScore: number } } => {
+  // 1. Housing & Living Conditions Score (Max weights.housingMax e.g. 25)
+  let rawHousing = 0;
+  if (common.roofMaterial === 'THATCH_PALM' || common.roofMaterial === 'DILAPIDATED') rawHousing += weights.thatchRoofPoints;
+  else if (common.roofMaterial === 'SHEET_ALUMINIUM') rawHousing += Math.round(weights.thatchRoofPoints * 0.5);
+
+  if (common.wallMaterial === 'CLAY_MUD' || common.wallMaterial === 'PALM_LEAF' || common.wallMaterial === 'DILAPIDATED') rawHousing += weights.mudWallPoints;
+  else if (common.wallMaterial === 'PLANK') rawHousing += Math.round(weights.mudWallPoints * 0.5);
+
+  if (common.floorMaterial === 'CLAY' || common.floorMaterial === 'SAND' || common.floorMaterial === 'DILAPIDATED') rawHousing += weights.sandFloorPoints;
+  if (common.houseArea === 'LESS_THAN_500_SQFT') rawHousing += weights.smallHouseAreaPoints;
+  if (!common.ownsLand || !common.ownsCurrentHouse) rawHousing += weights.noLandPoints;
+  const housingScore = Math.min(weights.housingMax, rawHousing);
+
+  // 2. Sanitation & Utilities Score (Max weights.sanitationMax e.g. 20)
+  let rawSanitation = 0;
+  if (common.toiletLocation === 'OPEN_DEFECATION' || common.toiletNature === 'NO_TOILET') rawSanitation += weights.noToiletPoints;
+  else if (common.toiletLocation === 'SHARED' || common.toiletLocation === 'PUBLIC') rawSanitation += Math.round(weights.noToiletPoints * 0.5);
+
+  if (common.waterSource === 'UNPROTECTED_WELL' || common.waterSource === 'RIVER_TANK') rawSanitation += weights.unprotectedWaterPoints;
+  if (common.lightingSource === 'KEROSENE' || common.lightingSource === 'GENERATOR_BATTERY') rawSanitation += weights.keroseneLightingPoints;
+  const sanitationScore = Math.min(weights.sanitationMax, rawSanitation);
+
+  // 3. Demographics & Vulnerability Score (Max weights.demographicsMax e.g. 25)
+  let rawDemo = 0;
+  if (common.isSingleParent) rawDemo += weights.singleParentPoints;
+  const hasDisability = members.some((m) => m.isPersonWithDisability || m.chronicIllness === 'DISABILITY_PHYSICAL');
+  if (hasDisability) rawDemo += weights.disabilityMemberPoints;
+  const hasChronic = members.some((m) => m.chronicIllness && m.chronicIllness !== 'NONE' && m.chronicIllness !== 'DISABILITY_PHYSICAL');
+  if (hasChronic) rawDemo += weights.chronicIllnessPoints;
+  const hasElderly = members.some((m) => m.isElderly);
+  if (hasElderly) rawDemo += weights.elderlyMemberPoints;
+  const demographicsScore = Math.min(weights.demographicsMax, rawDemo);
+
+  // 4. Economic Profile Score (Max weights.economicMax e.g. 30)
+  let rawEcon = 0;
+  const totalIncome = common.income.total || (
+    common.income.unstableSources + common.income.salary + common.income.agriculture + common.income.samurdhi
+  );
+  if (totalIncome <= 15000) rawEcon += weights.lowIncomePoints;
+  else if (totalIncome <= 25000) rawEcon += Math.round(weights.lowIncomePoints * 0.6);
+
+  if (common.vehicleType === 'NONE') rawEcon += weights.noVehiclePoints;
+  if (common.income.unstableSources > 0 || common.machineryType === 'NONE') rawEcon += weights.dailyWageLaborPoints;
+  const economicScore = Math.min(weights.economicMax, rawEcon);
+
+  const totalScore = Math.min(100, Math.max(0, housingScore + sanitationScore + demographicsScore + economicScore));
+
+  let priorityRank: 1 | 2 | 3 | 4 = 4;
+  if (totalScore >= 80) priorityRank = 1;
+  else if (totalScore >= 60) priorityRank = 2;
+  else if (totalScore >= 40) priorityRank = 3;
+  else priorityRank = 4;
+
+  return {
+    score100: totalScore,
+    priorityRank,
+    breakdown: {
+      housingScore,
+      sanitationScore,
+      demographicsScore,
+      economicScore,
+    },
+  };
+};

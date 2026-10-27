@@ -106,13 +106,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const sampleFamilyMember = beneficiaries.find((b) => b.familyCode === 'FAM-211-042');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-2 sm:p-4 backdrop-blur-xs overflow-hidden pointer-events-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full flex flex-col max-h-[92vh] border border-slate-200 overflow-hidden">
+        <div className="shrink-0 p-3.5 sm:p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
           <div className="flex items-center gap-2.5">
             <span className="text-2xl">📷</span>
             <div>
-              <h3 className="text-base font-bold text-slate-900">
+              <h3 className="text-sm sm:text-base font-bold text-slate-900">
                 {t.scanBarcode} / {lang === 'ta' ? 'குடும்ப QR ஸ்கேனர்' : 'Family Master QR Scanner'}
               </h3>
               <p className="text-[11px] text-slate-500">
@@ -124,13 +124,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 text-lg leading-none p-1 rounded-lg"
+            className="text-slate-400 hover:text-slate-700 text-lg leading-none p-1.5 rounded-lg hover:bg-slate-200 transition-colors"
           >
             ✕
           </button>
         </div>
 
-        <div className="my-4">
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5">
           <p className="text-xs text-slate-600 mb-2">
             {lang === 'ta'
               ? 'பார்கோட் / QR ஸ்கேனர் மூலம் ஸ்கேன் செய்யவும் அல்லது NIC / குடும்ப இலக்கத்தை தட்டச்சு செய்யவும்:'
@@ -323,10 +323,10 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           )}
         </div>
 
-        <div className="flex justify-end pt-3 border-t border-slate-100">
+        <div className="shrink-0 p-3 sm:p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
           <button
             onClick={onClose}
-            className="py-1.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
+            className="py-1.5 px-4 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
           >
             {t.close}
           </button>

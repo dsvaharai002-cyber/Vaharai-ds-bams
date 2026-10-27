@@ -463,7 +463,7 @@ export const generateDivisionsSampleCsv = (): string => {
     '212A,வாகரை வடக்கு,VAHARAI NORTH,K. Sivakumar,2450,610',
     '211,மாங்கேணி மத்தி,MANKERNI CENTRAL,T. Krishnarajah,2890,720',
     '213D,அம்மந்தனாவெளி,AMMANTHANAAVELI,G. Mohan,1840,460',
-    '213C,பூச்சக்கேணி,PUCHCHAKKERNI,V. Vasanthan,1260,320',
+    '213C,புச்சக்கேணி,PUCHCHAKKERNI,V. Vasanthan,1260,320',
     '211B,புனானை கிழக்கு,PUNAANAI EAST,P. Vijayan,1650,410',
     '213A,பால்சேனை,PAALCHENAI,S. Mahendran,2180,540',
     '211G,மாங்கேணி தெற்கு,MANKERNI SOUTH,M. Yogarajah,1980,510'

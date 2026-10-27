@@ -156,14 +156,14 @@ export const DEFAULT_DIVISIONS: GNDivision[] = ((initialDatabaseSeed as any)?.di
   { code: '211C', nameEn: 'Panichchankerni', nameTa: 'பனிச்சங்கேணி', gnOfficerName: '', population: 2310, households: 580 },
   { code: '211D', nameEn: 'Vaddavaan', nameTa: 'வட்டவான்', gnOfficerName: '', population: 1530, households: 380 },
   { code: '211A', nameEn: 'Kayankerni', nameTa: 'காயான்கேணி', gnOfficerName: '', population: 2600, households: 650 },
-  { code: '212B', nameEn: 'Uooriyankaddu (213B / 212B)', nameTa: 'உரியன்கட்டு (213B / 212B)', gnOfficerName: '', population: 1390, households: 350 },
+  { code: '212B', nameEn: 'Uooriyankaddu ', nameTa: 'உரியன்கட்டு', gnOfficerName: '', population: 1390, households: 350 },
   { code: '211E', nameEn: 'Mathurankernikulam', nameTa: 'மதுரங்கேணிக்குளம்', gnOfficerName: '', population: 1180, households: 290 },
   { code: '212', nameEn: 'Vaharai Central', nameTa: 'வாகரை மத்தி', gnOfficerName: '', population: 1920, households: 480 },
   { code: '211F', nameEn: 'Kirimichchi', nameTa: 'கிரிமிச்சை', gnOfficerName: '', population: 1720, households: 430 },
   { code: '212A', nameEn: 'Vaharai North', nameTa: 'வாகரை வடக்கு', gnOfficerName: '', population: 2450, households: 610 },
   { code: '211', nameEn: 'Mankerni Central', nameTa: 'மாங்கேணி மத்தி', gnOfficerName: '', population: 2890, households: 720 },
   { code: '213D', nameEn: 'Ammanthanaaveli', nameTa: 'அம்மந்தனாவெளி', gnOfficerName: '', population: 1840, households: 460 },
-  { code: '213C', nameEn: 'Puchchakkerni', nameTa: 'பூச்சக்கேணி', gnOfficerName: '', population: 1260, households: 320 },
+  { code: '213C', nameEn: 'Puchchakkerni', nameTa: 'புச்சக்கேணி', gnOfficerName: '', population: 1260, households: 320 },
   { code: '211B', nameEn: 'Punaanai East', nameTa: 'புனானை கிழக்கு', gnOfficerName: '', population: 1650, households: 410 },
   { code: '213A', nameEn: 'Paalchenai', nameTa: 'பால்சேனை', gnOfficerName: '', population: 2180, households: 540 },
   { code: '211G', nameEn: 'Mankerni South', nameTa: 'மாங்கேணி தெற்கு', gnOfficerName: '', population: 1980, households: 510 },
@@ -180,7 +180,7 @@ export const getDivisionByCode = (code: string, divisions: GNDivision[] = DEFAUL
   }
   return (
     divisions.find((d) => d.code.toUpperCase() === clean) ||
-    (clean === '213B' ? divisions.find((d) => d.nameEn.includes('Uooriyankaddu') || d.code === '213B') : undefined) ||
+    (clean === '212B' ? divisions.find((d) => d.nameEn.includes('Uooriyankaddu') || d.code === '213B') : undefined) ||
     (clean === '212B' ? divisions.find((d) => d.code === '212B') : undefined) ||
     divisions.find((d) => d.nameEn.toUpperCase().includes(clean) || d.nameTa.includes(clean))
   );

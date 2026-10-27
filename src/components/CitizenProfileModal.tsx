@@ -82,10 +82,10 @@ export const CitizenProfileModal: React.FC<CitizenProfileModalProps> = ({
   }, [barcodeVal, beneficiary, token]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-2 sm:p-4 overflow-hidden pointer-events-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[92vh] border border-slate-200 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-4 sm:p-6 border border-slate-200 my-4 max-h-[92vh] overflow-y-auto">
         {/* Modal Header */}
-        <div className="shrink-0 p-3.5 sm:p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
           <div className="flex items-center gap-2.5">
             <VaharaiLogo size={36} className="w-9 h-9" />
             <div>
@@ -99,14 +99,14 @@ export const CitizenProfileModal: React.FC<CitizenProfileModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 text-lg leading-none rounded-lg hover:bg-slate-200 transition-colors"
+            className="p-1 text-slate-400 hover:text-slate-700 text-lg leading-none"
           >
             ✕
           </button>
         </div>
 
-        {/* Citizen Card Dossier (Scrollable Body) */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        {/* Citizen Card Dossier */}
+        <div className="my-4 space-y-4">
           {/* Identity Header Strip */}
           <div className="p-4 bg-gradient-to-r from-emerald-50 via-slate-50 to-amber-50/40 border border-emerald-200 rounded-xl flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3">
@@ -425,12 +425,12 @@ export const CitizenProfileModal: React.FC<CitizenProfileModalProps> = ({
           </div>
         </div>
 
-        {/* Modal Actions (Sticky Bottom) */}
-        <div className="shrink-0 p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2 flex-wrap">
+        {/* Modal Actions */}
+        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 flex-wrap">
           {onPrintCard && beneficiary && (
             <button
               onClick={onPrintCard}
-              className="py-1.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors shadow-xs"
+              className="py-1.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
             >
               🪪 {t.printIdCard}
             </button>
@@ -438,14 +438,14 @@ export const CitizenProfileModal: React.FC<CitizenProfileModalProps> = ({
           {onPrintThermal && token && (
             <button
               onClick={onPrintThermal}
-              className="py-1.5 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors shadow-xs"
+              className="py-1.5 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
             >
               🖨️ {t.printThermalReceipt}
             </button>
           )}
           <button
             onClick={onClose}
-            className="py-1.5 px-3.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-medium transition-colors"
+            className="py-1.5 px-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium"
           >
             {t.close}
           </button>

@@ -41,16 +41,16 @@ export const PrintableFilteredReportModal: React.FC<PrintableFilteredReportModal
   const formattedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-2 sm:p-4 overflow-hidden pointer-events-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full flex flex-col max-h-[92vh] border border-slate-200 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full p-4 sm:p-6 border border-slate-200 my-4 max-h-[95vh] flex flex-col">
         {/* Modal Top Bar (Screen Controls - hidden on print) */}
-        <div className="shrink-0 p-3.5 sm:p-4 border-b border-slate-200 no-print flex items-center justify-between bg-slate-50/80 flex-wrap gap-2">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200 no-print">
           <div>
-            <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <span>📄</span>
               <span>{t.printPdfReport}</span>
             </h3>
-            <p className="text-[11px] sm:text-xs text-slate-500">
+            <p className="text-xs text-slate-500">
               {lang === 'ta'
                 ? 'அனைத்து வடிகட்டிய தரவுகளும் உத்தியோகபூர்வ அரச ஆவண வடிவில் PDF ஆக அச்சிட தயாராக உள்ளது.'
                 : 'All filtered records prepared in official Government Report format ready for PDF export / printing.'}
@@ -59,13 +59,13 @@ export const PrintableFilteredReportModal: React.FC<PrintableFilteredReportModal
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
-              className="py-1.5 px-3 sm:px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+              className="py-1.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 transition-colors shadow-xs"
             >
-              <span>🖨️ PDF ஆக அச்சிடுக</span>
+              <span>🖨️ PDF ஆக அச்சிடுக (Print / Save as PDF)</span>
             </button>
             <button
               onClick={onClose}
-              className="py-1.5 px-3 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-semibold text-xs transition-colors cursor-pointer"
+              className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold text-xs transition-colors"
             >
               ✕ {t.close}
             </button>
@@ -73,7 +73,7 @@ export const PrintableFilteredReportModal: React.FC<PrintableFilteredReportModal
         </div>
 
         {/* Printable Report Document Body */}
-        <div id="printable-report-area" className="flex-1 overflow-y-auto p-3 sm:p-6 text-black bg-white font-sans text-xs">
+        <div id="printable-report-area" className="flex-1 overflow-y-auto p-4 sm:p-6 text-black bg-white font-sans text-xs my-2">
           {/* Official Letterhead Header */}
           <div className="text-center pb-4 border-b-2 border-emerald-900">
             <div className="text-[11px] font-semibold text-slate-700 uppercase tracking-widest">

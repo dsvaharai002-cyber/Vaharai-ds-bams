@@ -37,8 +37,6 @@ import {
   ShieldAlert,
   ArrowRight,
   Sparkles,
-  Move,
-  RotateCcw,
 } from 'lucide-react';
 
 interface PregnantMothersViewProps {
@@ -80,60 +78,6 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
 
   // Month Checklist Modal for a specific Mother
   const [checklistMother, setChecklistMother] = useState<PregnantMotherRecord | null>(null);
-
-  // Draggable Modal State for Registration Pop-up (Requirement: நகர்த்தக்கூடிய வசதி)
-  const [modalPos, setModalPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = React.useRef({ startX: 0, startY: 0, initialPosX: 0, initialPosY: 0 });
-
-  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('textarea')) return;
-
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    setIsDragging(true);
-    dragStartRef.current = {
-      startX: clientX,
-      startY: clientY,
-      initialPosX: modalPos.x,
-      initialPosY: modalPos.y,
-    };
-  };
-
-  React.useEffect(() => {
-    if (!isDragging) return;
-
-    const handleMove = (e: MouseEvent | TouchEvent) => {
-      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
-      const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
-      const dx = clientX - dragStartRef.current.startX;
-      const dy = clientY - dragStartRef.current.startY;
-      // Clamp bounds to prevent modal dragging offscreen
-      const maxDeltaX = typeof window !== 'undefined' ? window.innerWidth * 0.42 : 300;
-      const maxDeltaY = typeof window !== 'undefined' ? window.innerHeight * 0.42 : 300;
-      setModalPos({
-        x: Math.max(-maxDeltaX, Math.min(maxDeltaX, dragStartRef.current.initialPosX + dx)),
-        y: Math.max(-maxDeltaY, Math.min(maxDeltaY, dragStartRef.current.initialPosY + dy)),
-      });
-    };
-
-    const handleUp = () => {
-      setIsDragging(false);
-    };
-
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleUp);
-    window.addEventListener('touchmove', handleMove);
-    window.addEventListener('touchend', handleUp);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleUp);
-      window.removeEventListener('touchmove', handleMove);
-      window.removeEventListener('touchend', handleUp);
-    };
-  }, [isDragging]);
 
   // Form State for New Pregnant Mother Registration (Requirements 01, 02, 03)
   const [formName, setFormName] = useState('');
@@ -197,7 +141,6 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
     setFormStampValue(4500);
     setFormPregnancyNumber(1);
     setFormNotes('');
-    setModalPos({ x: 0, y: 0 });
     setShowAddModal(true);
   };
 
@@ -732,380 +675,335 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
         </div>
       </div>
 
-      {/* Modal: Register New Pregnant Mother (Draggable & Fully Responsive for Desktop/Mobile) */}
+      {/* Modal: Register New Pregnant Mother */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-2 sm:p-4 overflow-hidden pointer-events-auto">
-          <div
-            style={{
-              transform: `translate(${modalPos.x}px, ${modalPos.y}px)`,
-              transition: isDragging ? 'none' : 'transform 0.08s ease-out',
-            }}
-            className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[92vh] border border-slate-200 overflow-hidden relative animate-in fade-in zoom-in-95"
-          >
-            {/* Draggable Header */}
-            <div
-              onMouseDown={handleDragStart}
-              onTouchStart={handleDragStart}
-              className="shrink-0 p-3.5 sm:p-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-pink-50/90 via-white to-slate-50 cursor-grab active:cursor-grabbing select-none"
-              title={lang === 'ta' ? 'இங்கு அழுத்திப் பிடித்து விரும்பிய இடத்திற்கு நகர்த்தலாம்' : 'Drag here to move pop-up'}
-            >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-pink-100 text-pink-700 rounded-lg shrink-0">
-                  <Baby className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5 sm:gap-2">
-                    <span>{lang === 'ta' ? 'புதிய கர்ப்பிணித் தாய் பதிவு' : 'Register Pregnant Mother'}</span>
-                    <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-semibold px-2 py-0.5 bg-slate-200/90 text-slate-700 rounded-full">
-                      <Move className="w-2.5 h-2.5 text-slate-500" />
-                      <span>{lang === 'ta' ? 'நகர்த்தலாம்' : 'Drag'}</span>
-                    </span>
-                  </h3>
-                  <p className="text-[10px] sm:text-[11px] text-slate-500 hidden sm:block">
-                    {lang === 'ta' ? 'கணனி மற்றும் மொபைலில் அளவு மாறும் நகர்த்தக்கூடிய சாளரம்' : 'Responsive movable dialog for mobile & desktop'}
-                  </p>
-                </div>
+                <Baby className="w-5 h-5 text-pink-700" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  {lang === 'ta' ? 'புதிய கர்ப்பிணித் தாய் பதிவு (New Pregnant Mother)' : 'Register Pregnant Mother'}
+                </h3>
               </div>
-
-              <div className="flex items-center gap-1.5">
-                {(modalPos.x !== 0 || modalPos.y !== 0) && (
-                  <button
-                    type="button"
-                    onClick={() => setModalPos({ x: 0, y: 0 })}
-                    className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-2xs"
-                    title={lang === 'ta' ? 'மையத்திற்கு திருப்புக' : 'Reset Position'}
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span className="hidden sm:inline">{lang === 'ta' ? 'மீட்டமை' : 'Reset'}</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <form onSubmit={handleSaveMother} className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              {/* Scrollable Form Body */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs">
-                {/* Active Duplicate Warning Alert */}
-                {duplicateActiveCheck.isDuplicate && duplicateActiveCheck.existingRecord && (
-                  <div className="p-3 bg-red-50 border-2 border-red-300 text-red-900 rounded-xl text-xs space-y-1">
-                    <div className="font-bold flex items-center gap-1.5 text-red-800">
-                      <ShieldAlert className="w-4 h-4" />
-                      <span>தீவிர எச்சரிக்கை: இந்த தாய் ஏற்கனவே முத்திரை பெற்று வருகிறார்!</span>
-                    </div>
-                    <p className="text-[11px]">
-                      முந்தைய பதிவு திகதி: <strong className="font-mono">{duplicateActiveCheck.existingRecord.registrationDate}</strong> · 
-                      முடிவடையும் திகதி: <strong className="font-mono">{duplicateActiveCheck.existingRecord.expectedCompletionDate}</strong>
-                    </p>
-                    <p className="text-[11px] font-semibold text-red-700">
-                      10 மாத கால அவகாசம் இன்னும் முடிவடையவில்லை! ஒரே தாய் இரட்டிப்பாக முத்திரை பெறுவது விதிமீறலாகும்.
-                    </p>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      தாயின் முழுப் பெயர் (Mother's Name) *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. கமலநாதன் சுகந்தி"
-                      value={formName}
-                      onChange={(e) => setFormName(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-600 focus:outline-none bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      தேசிய அடையாள அட்டை (NIC) *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. 965123456V அல்லது 199612345678"
-                      value={formNic}
-                      onChange={(e) => handleNicInput(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-pink-600 focus:outline-none uppercase bg-white"
-                    />
-                  </div>
+            {/* Active Duplicate Warning Alert */}
+            {duplicateActiveCheck.isDuplicate && duplicateActiveCheck.existingRecord && (
+              <div className="mt-3 p-3 bg-red-50 border-2 border-red-300 text-red-900 rounded-xl text-xs space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-red-800">
+                  <ShieldAlert className="w-4 h-4" />
+                  <span>தீவிர எச்சரிக்கை: இந்த தாய் ஏற்கனவே முத்திரை பெற்று வருகிறார்!</span>
                 </div>
+                <p className="text-[11px]">
+                  முந்தைய பதிவு திகதி: <strong className="font-mono">{duplicateActiveCheck.existingRecord.registrationDate}</strong> · 
+                  முடிவடையும் திகதி: <strong className="font-mono">{duplicateActiveCheck.existingRecord.expectedCompletionDate}</strong>
+                </p>
+                <p className="text-[11px] font-semibold text-red-700">
+                  10 மாத கால அவகாசம் இன்னும் முடிவடையவில்லை! ஒரே தாய் இரட்டிப்பாக முத்திரை பெறுவது விதிமீறலாகும்.
+                </p>
+              </div>
+            )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      கிராம அலுவலர் பிரிவு *
-                    </label>
-                    <select
-                      value={formDivision}
-                      onChange={(e) => setFormDivision(e.target.value)}
-                      disabled={isGramaNiladhari}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
-                    >
-                      {divisions.map((d) => (
-                        <option key={d.code} value={d.code}>
-                          {d.code} - {d.nameTa}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      தொலைபேசி இலக்கம்
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="077xxxxxxx"
-                      value={formPhone}
-                      onChange={(e) => setFormPhone(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white"
-                    />
-                  </div>
-                </div>
-
-                {/* Requirement 03: Family QR Code & Relationship in Registration */}
-                <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="font-bold text-blue-950 text-xs flex items-center gap-1.5">
-                      <span>👨‍👩‍👧‍👦</span>
-                      <span>குடும்ப அலகு & பொதுவான கிவ் ஆர் (Family Unit & Common QR Code)</span>
-                    </div>
-                    <span className="text-[10px] bg-blue-200 text-blue-900 font-mono font-bold px-2 py-0.5 rounded">
-                      பொது அலகு
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-bold text-blue-950 mb-1">
-                        குடும்ப QR எண் (Family Master Code) *
-                      </label>
-                      <div className="flex gap-1.5">
-                        <input
-                          type="text"
-                          required
-                          value={formFamilyCode}
-                          onChange={(e) => setFormFamilyCode(e.target.value.trim().toUpperCase())}
-                          placeholder="e.g. FAM-211-102"
-                          className="w-full px-3 py-1.5 border border-blue-300 rounded-lg font-mono font-bold text-blue-950 bg-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setFormFamilyCode(`FAM-${formDivision}-${Math.floor(Math.random() * 800 + 100)}`)}
-                          className="px-2.5 py-1 text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg whitespace-nowrap shadow-xs"
-                        >
-                          🎲 புதிய எண்
-                        </button>
-                      </div>
-                      <span className="text-[10px] text-blue-800 mt-1 block">
-                        ℹ️ குடும்பத்தின் பொதுவான கிவ் ஆர் இலக்கம். தாய், தந்தை, பிள்ளைகள் அனைவரும் இந்த ஒரே எண்ணையே பகிர்வர்.
-                      </span>
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-blue-950 mb-1">
-                        குடும்ப உறவு நிலை (Family Relationship) *
-                      </label>
-                      <select
-                        value={formFamilyRelationship}
-                        onChange={(e) => setFormFamilyRelationship(e.target.value as FamilyRelationship)}
-                        className="w-full px-3 py-2 border border-blue-300 rounded-lg bg-white font-bold text-slate-800"
-                      >
-                        {FAMILY_RELATIONSHIP_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.icon} {lang === 'ta' ? opt.labelTa : opt.labelEn}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="text-[10px] text-slate-500 mt-1 block">
-                        இயல்புநிலை: 👩 தாய் (Mother)
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Requirement 02: Multi-Welfare Aid Checklist (செக் லிஸ்ட்) */}
-                <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <label className="font-bold text-emerald-950 flex items-center gap-1.5">
-                        <span>📋</span>
-                        <span>நலன்புரி உதவிகள் செக் லிஸ்ட் (Multi-Welfare Checklist):</span>
-                      </label>
-                      <span className="text-[10px] text-emerald-800 block">
-                        ஒரு தாய் கர்ப்பிணி ஊட்டச்சத்து முத்திரையுடன் அஸ்வெசும, சமூர்த்தி போன்ற பிற உதவிகளையும் பெறலாம்.
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-mono font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded">
-                      {formWelfareSchemes.length} உதவிகள்
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1.5 bg-white rounded-lg border border-emerald-200">
-                    {ALL_WELFARE_SCHEMES_LIST.map((scheme) => {
-                      const isChecked = formWelfareSchemes.includes(scheme.id);
-                      return (
-                        <label
-                          key={scheme.id}
-                          className={`flex items-start gap-2 p-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
-                            isChecked
-                              ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-950'
-                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleToggleWelfareScheme(scheme.id)}
-                            className="mt-0.5 rounded text-emerald-700 focus:ring-emerald-600"
-                          />
-                          <span className="text-[11px] truncate">
-                            {lang === 'ta' ? scheme.labelTa : scheme.labelEn}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 10-Month Timeline Box */}
-                <div className="p-3.5 bg-pink-50/70 border border-pink-200 rounded-xl space-y-2">
-                  <div className="font-bold text-pink-900 flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-pink-700" />
-                    <span>10 மாத முத்திரை கால அவகாசம் (10-Month Validity Window)</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-600 mb-1 font-medium">
-                        பதிவு செய்த திகதி (Registration Date)
-                      </label>
-                      <input
-                        type="date"
-                        value={formRegDate}
-                        onChange={(e) => setFormRegDate(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-600 mb-1 font-medium">
-                        முடிவடையும் திகதி (10 மாதங்களின் பின்)
-                      </label>
-                      <input
-                        type="date"
-                        disabled
-                        value={formExpectedCompletionDate}
-                        className="w-full px-3 py-2 border border-pink-200 rounded-lg font-mono bg-pink-100/60 font-bold text-pink-900"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Parity Tracking: 01, 02, 03, 04 Child */}
-                <div className="p-3 bg-purple-50/60 border border-purple-200 rounded-xl space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="block font-bold text-purple-900">
-                      குழந்தை தவணை / பிரசவ முறை (Parity):
-                    </label>
-                    <span className="text-[11px] text-purple-700 font-semibold">
-                      கணினியால் கணிக்கப்பட்டது: {calculatedPregnancyCount} வது குழந்தை
-                    </span>
-                  </div>
-                  <select
-                    value={formPregnancyNumber}
-                    onChange={(e) => setFormPregnancyNumber(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-semibold"
-                  >
-                    <option value={1}>01 வது குழந்தை / முதல் பிரசவம் (1st Pregnancy)</option>
-                    <option value={2}>02 வது குழந்தை / இரண்டாம் பிரசவம் (2nd Pregnancy)</option>
-                    <option value={3}>03 வது குழந்தை / மூன்றாம் பிரசவம் (3rd Pregnancy)</option>
-                    <option value={4}>04 வது குழந்தை / நான்காம் பிரசவம் (4th Pregnancy)</option>
-                    <option value={5}>05 வது குழந்தை / அதற்கு மேற்பட்டவை (5th+ Pregnancy)</option>
-                  </select>
-                </div>
-
-                {/* Stamp Voucher Details (Optional initially) */}
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                  <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                    <CreditCard className="w-4 h-4 text-slate-600" />
-                    <span>முத்திரை ஒதுக்கீடு (Stamp Voucher Assignment - விருப்பத்தெரிவு)</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    இப்போதே முத்திரை இலக்கம் வழங்கப்பட்டால் உள்ளிடவும். இல்லையெனில் காத்திருப்பு வரிசையில் பாதுகாக்கப்பட்டு பின்னர் ஒதுக்கப்படும்.
-                  </p>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-slate-600 mb-1 font-medium">முத்திரை இலக்கம்</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. STAMP-8921"
-                        value={formStampNo}
-                        onChange={(e) => setFormStampNo(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-600 mb-1 font-medium">வழங்கிய திகதி</label>
-                      <input
-                        type="date"
-                        value={formStampDate}
-                        onChange={(e) => setFormStampDate(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-600 mb-1 font-medium">மாதாந்த பெறுமதி (LKR)</label>
-                      <input
-                        type="number"
-                        value={formStampValue}
-                        onChange={(e) => setFormStampValue(Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white font-bold"
-                      />
-                    </div>
-                  </div>
+            <form onSubmit={handleSaveMother} className="mt-4 space-y-4 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    தாயின் முழுப் பெயர் (Mother's Name) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. கமலநாதன் சுகந்தி"
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-600 focus:outline-none"
+                  />
                 </div>
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    மேலதிக குறிப்புகள்
+                    தேசிய அடையாள அட்டை (NIC) *
                   </label>
-                  <textarea
-                    rows={2}
-                    placeholder="மருத்துவ ஆலோசனைகள், விசேட உணவுத் தேவைகள்..."
-                    value={formNotes}
-                    onChange={(e) => setFormNotes(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 965123456V அல்லது 199612345678"
+                    value={formNic}
+                    onChange={(e) => handleNicInput(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-pink-600 focus:outline-none uppercase"
                   />
                 </div>
               </div>
 
-              {/* Sticky Bottom Action Bar */}
-              <div className="shrink-0 p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    கிராம அலுவலர் பிரிவு *
+                  </label>
+                  <select
+                    value={formDivision}
+                    onChange={(e) => setFormDivision(e.target.value)}
+                    disabled={isGramaNiladhari}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                  >
+                    {divisions.map((d) => (
+                      <option key={d.code} value={d.code}>
+                        {d.code} - {d.nameTa}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    தொலைபேசி இலக்கம்
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="077xxxxxxx"
+                    value={formPhone}
+                    onChange={(e) => setFormPhone(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Requirement 03: Family QR Code & Relationship in Registration */}
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-blue-950 text-xs flex items-center gap-1.5">
+                    <span>👨‍👩‍👧‍👦</span>
+                    <span>குடும்ப அலகு & பொதுவான கிவ் ஆர் (Family Unit & Common QR Code)</span>
+                  </div>
+                  <span className="text-[10px] bg-blue-200 text-blue-900 font-mono font-bold px-2 py-0.5 rounded">
+                    பொது அலகு
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-blue-950 mb-1">
+                      குடும்ப QR எண் (Family Master Code) *
+                    </label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        required
+                        value={formFamilyCode}
+                        onChange={(e) => setFormFamilyCode(e.target.value.trim().toUpperCase())}
+                        placeholder="e.g. FAM-211-102"
+                        className="w-full px-3 py-1.5 border border-blue-300 rounded-lg font-mono font-bold text-blue-950 bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormFamilyCode(`FAM-${formDivision}-${Math.floor(Math.random() * 800 + 100)}`)}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg whitespace-nowrap shadow-xs"
+                      >
+                        🎲 புதிய எண்
+                      </button>
+                    </div>
+                    <span className="text-[10px] text-blue-800 mt-1 block">
+                      ℹ️ குடும்பத்தின் பொதுவான கிவ் ஆர் இலக்கம். தாய், தந்தை, பிள்ளைகள் அனைவரும் இந்த ஒரே எண்ணையே பகிர்வர்.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-blue-950 mb-1">
+                      குடும்ப உறவு நிலை (Family Relationship) *
+                    </label>
+                    <select
+                      value={formFamilyRelationship}
+                      onChange={(e) => setFormFamilyRelationship(e.target.value as FamilyRelationship)}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg bg-white font-bold text-slate-800"
+                    >
+                      {FAMILY_RELATIONSHIP_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.icon} {lang === 'ta' ? opt.labelTa : opt.labelEn}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      இயல்புநிலை: 👩 தாய் (Mother)
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Requirement 02: Multi-Welfare Aid Checklist (செக் லிஸ்ட்) */}
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="font-bold text-emerald-950 flex items-center gap-1.5">
+                      <span>📋</span>
+                      <span>நலன்புரி உதவிகள் செக் லிஸ்ட் (Multi-Welfare Checklist):</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-800 block">
+                      ஒரு தாய் கர்ப்பிணி ஊட்டச்சத்து முத்திரையுடன் அஸ்வெசும, சமூர்த்தி போன்ற பிற உதவிகளையும் பெறலாம்.
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded">
+                    {formWelfareSchemes.length} உதவிகள்
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1.5 bg-white rounded-lg border border-emerald-200">
+                  {ALL_WELFARE_SCHEMES_LIST.map((scheme) => {
+                    const isChecked = formWelfareSchemes.includes(scheme.id);
+                    return (
+                      <label
+                        key={scheme.id}
+                        className={`flex items-start gap-2 p-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                          isChecked
+                            ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-950'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleWelfareScheme(scheme.id)}
+                          className="mt-0.5 rounded text-emerald-700 focus:ring-emerald-600"
+                        />
+                        <span className="text-[11px] truncate">
+                          {lang === 'ta' ? scheme.labelTa : scheme.labelEn}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 10-Month Timeline Box */}
+              <div className="p-3.5 bg-pink-50/70 border border-pink-200 rounded-xl space-y-2">
+                <div className="font-bold text-pink-900 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-pink-700" />
+                  <span>10 மாத முத்திரை கால அவகாசம் (10-Month Validity Window)</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-600 mb-1 font-medium">
+                      பதிவு செய்த திகதி (Registration Date)
+                    </label>
+                    <input
+                      type="date"
+                      value={formRegDate}
+                      onChange={(e) => setFormRegDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 mb-1 font-medium">
+                      முடிவடையும் திகதி (10 மாதங்களின் பின்)
+                    </label>
+                    <input
+                      type="date"
+                      disabled
+                      value={formExpectedCompletionDate}
+                      className="w-full px-3 py-2 border border-pink-200 rounded-lg font-mono bg-pink-100/60 font-bold text-pink-900"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Parity Tracking: 01, 02, 03, 04 Child */}
+              <div className="p-3 bg-purple-50/60 border border-purple-200 rounded-xl space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-purple-900">
+                    குழந்தை தவணை / பிரசவ முறை (Parity):
+                  </label>
+                  <span className="text-[11px] text-purple-700 font-semibold">
+                    கணினியால் கணிக்கப்பட்டது: {calculatedPregnancyCount} வது குழந்தை
+                  </span>
+                </div>
+                <select
+                  value={formPregnancyNumber}
+                  onChange={(e) => setFormPregnancyNumber(Number(e.target.value))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-semibold"
+                >
+                  <option value={1}>01 வது குழந்தை / முதல் பிரசவம் (1st Pregnancy)</option>
+                  <option value={2}>02 வது குழந்தை / இரண்டாம் பிரசவம் (2nd Pregnancy)</option>
+                  <option value={3}>03 வது குழந்தை / மூன்றாம் பிரசவம் (3rd Pregnancy)</option>
+                  <option value={4}>04 வது குழந்தை / நான்காம் பிரசவம் (4th Pregnancy)</option>
+                  <option value={5}>05 வது குழந்தை / அதற்கு மேற்பட்டவை (5th+ Pregnancy)</option>
+                </select>
+              </div>
+
+              {/* Stamp Voucher Details (Optional initially) */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <CreditCard className="w-4 h-4 text-slate-600" />
+                  <span>முத்திரை ஒதுக்கீடு (Stamp Voucher Assignment - விருப்பத்தெரிவு)</span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  இப்போதே முத்திரை இலக்கம் வழங்கப்பட்டால் உள்ளிடவும். இல்லையெனில் காத்திருப்பு வரிசையில் பாதுகாக்கப்பட்டு பின்னர் ஒதுக்கப்படும்.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-slate-600 mb-1 font-medium">முத்திரை இலக்கம்</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. STAMP-8921"
+                      value={formStampNo}
+                      onChange={(e) => setFormStampNo(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 mb-1 font-medium">வழங்கிய திகதி</label>
+                    <input
+                      type="date"
+                      value={formStampDate}
+                      onChange={(e) => setFormStampDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 mb-1 font-medium">மாதாந்த பெறுமதி (LKR)</label>
+                    <input
+                      type="number"
+                      value={formStampValue}
+                      onChange={(e) => setFormStampValue(Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  மேலதிக குறிப்புகள்
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="மருத்துவ ஆலோசனைகள், விசேட உணவுத் தேவைகள்..."
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl font-bold text-xs transition-colors"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold"
                 >
                   {t.cancel}
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-pink-700 hover:bg-pink-800 text-white rounded-xl font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                  className="px-5 py-2 bg-pink-700 hover:bg-pink-800 text-white rounded-lg font-bold shadow-xs cursor-pointer"
                 >
-                  {lang === 'ta' ? 'தாயை பதிவு செய்க' : 'Register Mother'}
+                  பதிவு செய்க
                 </button>
               </div>
             </form>
@@ -1115,8 +1013,8 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
 
       {/* Modal: Assign Stamp Number */}
       {assigningStampMother && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-4 overflow-hidden pointer-events-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full flex flex-col max-h-[92vh] p-4 sm:p-6 border border-slate-200 overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
             <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-2">
               <CreditCard className="w-5 h-5 text-amber-600" />
               <span>முத்திரை இலக்கம் ஒதுக்குதல் (Assign Stamp Number)</span>
@@ -1191,26 +1089,24 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
 
       {/* Modal: 10-Month Interactive Food Package Checklist */}
       {checklistMother && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-2 sm:p-4 overflow-hidden pointer-events-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[92vh] border border-slate-200 overflow-hidden">
-            {/* Header */}
-            <div className="shrink-0 p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 border border-slate-200 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
-                <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <Baby className="w-5 h-5 text-pink-700 shrink-0" />
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Baby className="w-5 h-5 text-pink-700" />
                   <span>10 மாத போசணை முத்திரை பொருட்கள் விநியோக அட்டவணை</span>
                 </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                <p className="text-xs text-slate-500 mt-0.5">
                   {checklistMother.name} · NIC: <span className="font-mono font-semibold">{checklistMother.nic}</span> · முத்திரை: <span className="font-mono font-bold text-pink-700">#{checklistMother.stampNumber || 'Pending'}</span>
                 </p>
               </div>
-              <button onClick={() => setChecklistMother(null)} className="text-slate-400 hover:text-slate-600 p-1">
+              <button onClick={() => setChecklistMother(null)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Scrollable Body */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+            <div className="mt-4 space-y-4">
               {/* Progress Bar */}
               <div className="p-3 bg-pink-50 rounded-xl border border-pink-200">
                 <div className="flex items-center justify-between text-xs font-bold text-pink-900 mb-1.5">
@@ -1285,12 +1181,11 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
               )}
             </div>
 
-            {/* Sticky Footer */}
-            <div className="shrink-0 p-3 sm:p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <div className="flex justify-end pt-4 mt-4 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setChecklistMother(null)}
-                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer"
+                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold cursor-pointer"
               >
                 மூடுக
               </button>

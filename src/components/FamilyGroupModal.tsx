@@ -205,25 +205,25 @@ export const FamilyGroupModal: React.FC<FamilyGroupModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-2 sm:p-4 overflow-hidden pointer-events-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full flex flex-col max-h-[92vh] border border-slate-200 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-4 sm:p-6 border border-slate-200 my-4 max-h-[94vh] overflow-y-auto">
         {/* Modal Top Header */}
-        <div className="shrink-0 p-3.5 sm:p-4 border-b border-slate-200 no-print flex items-center justify-between bg-slate-50/80">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200 no-print">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center shadow-xs shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center shadow-xs">
               <Users className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-sm sm:text-base md:text-lg font-bold text-slate-900">
+                <h3 className="text-base sm:text-lg font-bold text-slate-900">
                   {lang === 'ta' ? 'குடும்ப அலகு & உறவுமுறை காட்சி (Family Tree)' : 'Family Unit & Household Tree'}
                 </h3>
                 <span className="font-mono font-bold text-xs bg-emerald-100 text-emerald-900 px-2.5 py-0.5 rounded-full border border-emerald-300">
                   {familyCode}
                 </span>
               </div>
-              <p className="text-[11px] sm:text-xs text-slate-500">
-                {division ? `${division.code} - ${division.nameTa}` : `பிரிவு: ${divisionCode}`} · {members.length} {lang === 'ta' ? 'உறுப்பினர்கள்' : 'members'}
+              <p className="text-xs text-slate-500">
+                {division ? `${division.code} - ${division.nameTa} (${division.nameEn})` : `பிரிவு: ${divisionCode}`} · {members.length} {lang === 'ta' ? 'உறுப்பினர்கள் இணைக்கப்பட்டுள்ளனர்' : 'members connected'}
               </p>
             </div>
           </div>
@@ -231,24 +231,22 @@ export const FamilyGroupModal: React.FC<FamilyGroupModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
-              className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
             >
               <Printer className="w-4 h-4 text-slate-600" />
-              <span className="hidden sm:inline">{lang === 'ta' ? 'அச்சிடு (Print)' : 'Print'}</span>
+              <span>{lang === 'ta' ? 'அச்சிடு (Print)' : 'Print'}</span>
             </button>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-700 text-lg leading-none p-1.5 rounded-lg hover:bg-slate-200 transition-colors"
+              className="text-slate-400 hover:text-slate-700 text-lg leading-none p-1 rounded-lg hover:bg-slate-100"
             >
               ✕
             </button>
           </div>
         </div>
 
-        {/* Scrollable Modal Body */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4">
-          {/* Printable Master QR Dossier Header */}
-          <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border-2 border-emerald-300 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+        {/* Printable Master QR Dossier Header */}
+        <div className="my-4 p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border-2 border-emerald-300 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             {qrDataUrl ? (
               <div className="p-2 bg-white rounded-xl shadow-xs border border-emerald-200 shrink-0">
@@ -395,16 +393,16 @@ export const FamilyGroupModal: React.FC<FamilyGroupModalProps> = ({
           )}
         </div>
 
-        {/* Modal Footer (Sticky Bottom) */}
-        <div className="shrink-0 p-3 sm:p-4 bg-slate-50 border-t border-slate-200 no-print flex items-center justify-between text-xs flex-wrap gap-2">
-          <div className="text-slate-500 text-[11px] sm:text-xs">
+        {/* Modal Footer */}
+        <div className="flex items-center justify-between pt-3 border-t border-slate-200 no-print text-xs">
+          <div className="text-slate-500">
             {lang === 'ta'
               ? 'குறிப்பு: உறுப்பினரின் மீது கிளிக் செய்து அவரின் தனிப்பட்ட முழு விபரத்தை பார்வையிடலாம்.'
               : 'Click any member card to view complete citizen dossier and history.'}
           </div>
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold cursor-pointer transition-colors shadow-2xs"
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold"
           >
             {lang === 'ta' ? 'மூடுக (Close)' : 'Close'}
           </button>

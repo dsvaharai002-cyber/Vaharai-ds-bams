@@ -40,10 +40,11 @@ export const parseSriLankanNic = (nicRaw: string): NicParseResult => {
     return { isValid: false, format: 'INVALID', error: 'NIC is empty' };
   }
 
-  const cleanNic = nicRaw.trim().toUpperCase();
+  // Strip internal spaces, hyphens, and whitespace
+  const cleanNic = nicRaw.trim().replace(/[\s\-_]/g, '').toUpperCase();
 
   // If provisional computer generated NIC (e.g., TNIC-211-2026-...)
-  if (cleanNic.startsWith('TNIC-')) {
+  if (cleanNic.startsWith('TNIC-') || cleanNic.startsWith('TEMP')) {
     return {
       isValid: true,
       format: 'PROVISIONAL',
@@ -54,17 +55,19 @@ export const parseSriLankanNic = (nicRaw: string): NicParseResult => {
   let dayOfYear: number;
   let isOldFormat = false;
 
-  // Old NIC: 9 digits + 'V' or 'X'
-  const oldRegex = /^([0-9]{2})([0-9]{3})([0-9]{4})([VX])$/;
+  // Old NIC: 9 digits + 'V' or 'X' (or 9 digits without suffix letter from manual typo)
+  const oldRegex = /^([0-9]{2})([0-9]{3})([0-9]{4})([VX]?)$/;
   // New NIC: 12 digits
   const newRegex = /^([0-9]{4})([0-9]{3})([0-9]{5})$/;
 
-  if (oldRegex.test(cleanNic)) {
+  if (cleanNic.length <= 10 && oldRegex.test(cleanNic)) {
     isOldFormat = true;
     const match = cleanNic.match(oldRegex)!;
-    year = 1900 + parseInt(match[1], 10);
+    const yy = parseInt(match[1], 10);
+    // If yy is <= 26, it could be 2000s, otherwise 1900s
+    year = yy <= 26 ? 2000 + yy : 1900 + yy;
     dayOfYear = parseInt(match[2], 10);
-  } else if (newRegex.test(cleanNic)) {
+  } else if (cleanNic.length === 12 && newRegex.test(cleanNic)) {
     const match = cleanNic.match(newRegex)!;
     year = parseInt(match[1], 10);
     dayOfYear = parseInt(match[2], 10);

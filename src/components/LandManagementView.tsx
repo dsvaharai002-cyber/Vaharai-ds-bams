@@ -25,6 +25,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { generateQrDataUrl } from '../utils/barcode';
+import { clearAllLandRecordsPermanently, recordDeletedId, saveLandRecords } from '../services/storage';
 
 interface LandManagementViewProps {
   landRecords: LandRecord[];
@@ -208,15 +209,47 @@ export const LandManagementView: React.FC<LandManagementViewProps> = ({
     setEditingRecord(null);
   };
 
+  // Super Admin: Wipe all land records permanently
+  const handleClearAllLandRecords = () => {
+    if (!isSuperAdmin) {
+      alert(lang === 'ta' ? 'அனைத்து காணி விபரங்களையும் அழிக்க சுப்பர் அட்மின் அனுமதி தேவை.' : 'Super Admin permission required to wipe land records.');
+      return;
+    }
+    const confirmed = window.confirm(
+      lang === 'ta'
+        ? 'எச்சரிக்கை: பதிவுசெய்யப்பட்ட அனைத்து காணி விபரங்களையும் நிரந்தரமாக அழிக்க விரும்புகிறீர்களா? இந்நடவடிக்கையை மீளப்பெற முடியாது.'
+        : 'WARNING: Are you sure you want to permanently delete all land records?'
+    );
+    if (!confirmed) return;
+
+    const code = window.prompt(
+      lang === 'ta'
+        ? 'நிரந்தரமாக அழிக்க "DELETE" அல்லது "அழி" என தட்டச்சு செய்க:'
+        : 'Type "DELETE" to confirm permanent deletion:'
+    );
+    if (code !== 'DELETE' && code !== 'அழி') {
+      alert(lang === 'ta' ? 'உறுதிப்படுத்தல் சொல் பொருந்தவில்லை. நடவடிக்கை ரத்து செய்யப்பட்டது.' : 'Confirmation text did not match. Aborted.');
+      return;
+    }
+
+    landRecords.forEach((r) => recordDeletedId(r.id, r.ownerNic));
+    clearAllLandRecordsPermanently();
+    onUpdateLandRecords([]);
+    onAuditLog('CLEAR_ALL_LAND_RECORDS', `Super Admin ${currentUser.name} wiped all land records.`);
+    alert(lang === 'ta' ? 'அனைத்து காணி விபரங்களும் வெற்றிகரமாக அழிக்கப்பட்டன.' : 'All land records have been wiped.');
+  };
+
   // Delete Record
   const handleDeleteRecord = (rec: LandRecord) => {
     if (!canEdit) return;
     const confirmMsg = lang === 'ta'
-      ? `காணி அனுமதிப்பத்திரம் ${rec.permitNo} (${rec.ownerNameTa}) நிச்சயமாக நீக்கப்பட வேண்டுமா?`
-      : `Are you sure you want to delete land permit ${rec.permitNo}?`;
+      ? `காணி அனுமதிப்பத்திரம் ${rec.permitNo} (${rec.ownerNameTa}) நிச்சயமாக நிரந்தரமாக நீக்கப்பட வேண்டுமா?`
+      : `Are you sure you want to permanently delete land permit ${rec.permitNo}?`;
     if (!window.confirm(confirmMsg)) return;
 
+    recordDeletedId(rec.id, rec.ownerNic);
     const updated = landRecords.filter((r) => r.id !== rec.id);
+    saveLandRecords(updated);
     onUpdateLandRecords(updated);
     onAuditLog('DELETE_LAND_RECORD', `Deleted land permit ${rec.permitNo} (${rec.ownerNic})`);
   };
@@ -267,6 +300,18 @@ export const LandManagementView: React.FC<LandManagementViewProps> = ({
             >
               <Upload className="w-3.5 h-3.5 text-slate-600" />
               <span>{lang === 'ta' ? 'காணி CSV அப்லோட்' : 'Upload Land CSV'}</span>
+            </button>
+          )}
+
+          {isSuperAdmin && landRecords.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAllLandRecords}
+              className="px-3.5 py-2 bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-800 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
+              title={lang === 'ta' ? 'அனைத்து காணி விபரங்களையும் நிரந்தரமாக அழி (Super Admin)' : 'Wipe all land records'}
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>{lang === 'ta' ? 'அனைத்து காணிகளையும் அழி' : 'Clear All Land'}</span>
             </button>
           )}
 

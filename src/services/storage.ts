@@ -20,6 +20,7 @@ import {
 } from '../types';
 import initialDatabaseSeed from '../data/central_database.json';
 import { scheduleAutoDriveSync } from './googleDrive';
+import { parseSriLankanNic } from '../utils/nicParser';
 
 const STORAGE_KEYS = {
   USERS: 'vaharai_ds_users_v6',
@@ -111,16 +112,57 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// Age calculation helper
-export const calculateAge = (dob: string): number => {
-  if (!dob) return 0;
-  const birthDate = new Date(dob);
+// Age calculation helper with Sri Lankan NIC fallback & multiple date format support
+export const calculateAge = (dob?: string, nic?: string): number => {
+  // If valid Sri Lankan NIC is available and (DOB is missing, default, or invalid), extract accurate age directly from NIC
+  if (nic && (!dob || dob === '1995-01-01' || dob === '1990-01-01' || dob === '2000-01-01' || dob === '1954-01-01' || dob === '1985-01-01' || dob === '2005-01-01')) {
+    const parsed = parseSriLankanNic(nic);
+    if (parsed.isValid && typeof parsed.age === 'number') {
+      return parsed.age;
+    }
+  }
+
+  if (!dob || !dob.trim()) {
+    if (nic) {
+      const parsed = parseSriLankanNic(nic);
+      if (parsed.isValid && typeof parsed.age === 'number') return parsed.age;
+    }
+    return 0;
+  }
+
+  // Handle DD/MM/YYYY or DD-MM-YYYY formats safely
+  let birthDate: Date;
+  const cleanDob = dob.trim();
+  if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}$/.test(cleanDob)) {
+    const parts = cleanDob.split(/[\/\-\.]/);
+    birthDate = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+  } else {
+    birthDate = new Date(cleanDob);
+  }
+
+  if (isNaN(birthDate.getTime())) {
+    if (nic) {
+      const parsed = parseSriLankanNic(nic);
+      if (parsed.isValid && typeof parsed.age === 'number') return parsed.age;
+    }
+    return 0;
+  }
+
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
   const m = today.getMonth() - birthDate.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
     age--;
   }
+
+  // If age came out to 31 (from 1995-01-01) or 36 (from 1990-01-01) and NIC gives a different real age, prefer NIC!
+  if (nic && (cleanDob === '1995-01-01' || cleanDob === '1990-01-01' || cleanDob === '2000-01-01' || cleanDob === '1954-01-01')) {
+    const parsed = parseSriLankanNic(nic);
+    if (parsed.isValid && typeof parsed.age === 'number') {
+      return parsed.age;
+    }
+  }
+
   return age >= 0 ? age : 0;
 };
 
@@ -547,12 +589,26 @@ export const loadBeneficiaries = (): Beneficiary[] => {
   const stored = getStoredData<Beneficiary[]>(STORAGE_KEYS.BENEFICIARIES, DEFAULT_BENEFICIARIES);
   const deletedSet = getDeletedIdsSet();
   // Filter out any that were deleted/tombstoned so deletions stay permanently deleted on refresh
-  const filtered = stored.filter((b) => !deletedSet.has(b.id) && !deletedSet.has(b.nic));
+  const filtered = stored.filter((b) => !deletedSet.has(b.id) && !(b.nic && deletedSet.has(b.nic)));
   return filtered.map((b) => {
+    let resolvedDob = b.dob;
+    let resolvedGender = b.gender;
+    // Auto-heal default/empty DOB using NIC if valid
+    if (b.nic && (!resolvedDob || resolvedDob === '1995-01-01' || resolvedDob === '1990-01-01' || resolvedDob === '2000-01-01')) {
+      const parsed = parseSriLankanNic(b.nic);
+      if (parsed.isValid && parsed.birthDate) {
+        resolvedDob = parsed.birthDate;
+        if (!resolvedGender || resolvedGender === 'OTHER') {
+          resolvedGender = parsed.gender || resolvedGender;
+        }
+      }
+    }
     const familyCode = b.familyCode || (b.householdNo ? `FAM-${b.householdNo.replace(/^HH-/, '')}` : `FAM-${b.divisionCode}-001`);
     const familyQrPayload = b.familyQrPayload || `VHR-FAMILY|FAM:${familyCode}|DIV:${b.divisionCode}`;
     return {
       ...b,
+      dob: resolvedDob,
+      gender: resolvedGender,
       familyCode,
       familyQrPayload,
     };
@@ -563,9 +619,11 @@ export const saveBeneficiaries = (items: Beneficiary[], trackDeletions: boolean 
   if (trackDeletions) {
     const prev = getStoredData<Beneficiary[]>(STORAGE_KEYS.BENEFICIARIES, []);
     const newIds = new Set(items.map((b) => b.id));
-    const newNics = new Set(items.map((b) => b.nic));
+    const newNics = new Set(items.map((b) => b.nic).filter(Boolean));
     for (const p of prev) {
-      if (!newIds.has(p.id) && !newNics.has(p.nic)) {
+      const idMissing = p.id && !newIds.has(p.id);
+      const nicMissing = p.nic && !newNics.has(p.nic);
+      if (idMissing || nicMissing) {
         recordDeletedId(p.id, p.nic);
       }
     }
@@ -576,9 +634,49 @@ export const saveBeneficiaries = (items: Beneficiary[], trackDeletions: boolean 
 
 export const deleteSingleBeneficiary = (id: string, nic?: string) => {
   recordDeletedId(id, nic);
-  const current = loadBeneficiaries();
+  const current = getStoredData<Beneficiary[]>(STORAGE_KEYS.BENEFICIARIES, []);
   const updated = current.filter((b) => b.id !== id && (nic ? b.nic !== nic : true));
-  saveBeneficiaries(updated, false);
+  setStoredData(STORAGE_KEYS.BENEFICIARIES, updated);
+  scheduleCentralSync();
+  notifyCrossTabSync('RECORD_DELETED');
+};
+
+export const clearAllBeneficiariesPermanently = () => {
+  const current = getStoredData<Beneficiary[]>(STORAGE_KEYS.BENEFICIARIES, []);
+  recordDeletedIds(current.map((b) => b.id).concat(current.map((b) => b.nic).filter(Boolean)));
+  setStoredData(STORAGE_KEYS.BENEFICIARIES, []);
+  scheduleCentralSync();
+  notifyCrossTabSync('ALL_BENEFICIARIES_CLEARED');
+};
+
+export const clearAllHouseholdsPermanently = () => {
+  setStoredData(STORAGE_KEYS.HOUSEHOLDS, []);
+  scheduleCentralSync();
+  notifyCrossTabSync('ALL_HOUSEHOLDS_CLEARED');
+};
+
+export const clearAllAssistanceRecordsPermanently = () => {
+  setStoredData(STORAGE_KEYS.ASSISTANCE, []);
+  scheduleCentralSync();
+  notifyCrossTabSync('ALL_ASSISTANCE_CLEARED');
+};
+
+export const clearAllPregnantMothersPermanently = () => {
+  setStoredData(STORAGE_KEYS.PREGNANT_MOTHERS, []);
+  scheduleCentralSync();
+  notifyCrossTabSync('ALL_PREGNANT_MOTHERS_CLEARED');
+};
+
+export const clearAllLandRecordsPermanently = () => {
+  setStoredData(STORAGE_KEYS.LAND_RECORDS, []);
+  scheduleCentralSync();
+  notifyCrossTabSync('ALL_LAND_RECORDS_CLEARED');
+};
+
+export const clearAllTokensPermanently = () => {
+  setStoredData(STORAGE_KEYS.TOKENS, []);
+  scheduleCentralSync();
+  notifyCrossTabSync('ALL_TOKENS_CLEARED');
 };
 
 export const loadTokens = (): QueueToken[] => {

@@ -16,6 +16,9 @@ import {
   createDefaultMonthlyCollections,
   checkDuplicateActivePregnantMother,
   getPregnancyCountForNic,
+  clearAllPregnantMothersPermanently,
+  recordDeletedId,
+  savePregnantMothers,
 } from '../services/storage';
 import { downloadCsvFile, escapeCsv, getRelationshipTamilLabel } from '../services/csv';
 import {
@@ -37,6 +40,7 @@ import {
   ShieldAlert,
   ArrowRight,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 
 interface PregnantMothersViewProps {
@@ -59,8 +63,55 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
   const t = translations[lang];
 
   // Role separation
+  const isSuperAdmin = currentUser.role === 'SUPERADMIN';
   const isGramaNiladhari = currentUser.role === 'GRAMANIILATHARI';
   const officerDivision = isGramaNiladhari ? currentUser.division || '211' : '';
+
+  // Super Admin: Wipe all pregnant mother records
+  const handleClearAllMothers = () => {
+    if (!isSuperAdmin) {
+      alert(lang === 'ta' ? 'அனைத்து கர்ப்பிணித் தாய்மார் விபரங்களையும் அழிக்க சுப்பர் அட்மின் அனுமதி தேவை.' : 'Super Admin permission required to wipe pregnant mother records.');
+      return;
+    }
+    const confirmed = window.confirm(
+      lang === 'ta'
+        ? 'எச்சரிக்கை: பதிவுசெய்யப்பட்ட அனைத்து கர்ப்பிணித் தாய்மார் விபரங்களையும் நிரந்தரமாக அழிக்க விரும்புகிறீர்களா? இந்நடவடிக்கையை மீளப்பெற முடியாது.'
+        : 'WARNING: Are you sure you want to permanently delete all pregnant mother records?'
+    );
+    if (!confirmed) return;
+
+    const code = window.prompt(
+      lang === 'ta'
+        ? 'நிரந்தரமாக அழிக்க "DELETE" அல்லது "அழி" என தட்டச்சு செய்க:'
+        : 'Type "DELETE" to confirm permanent deletion:'
+    );
+    if (code !== 'DELETE' && code !== 'அழி') {
+      alert(lang === 'ta' ? 'உறுதிப்படுத்தல் சொல் பொருந்தவில்லை. நடவடிக்கை ரத்து செய்யப்பட்டது.' : 'Confirmation text did not match. Aborted.');
+      return;
+    }
+
+    pregnantMothers.forEach((m) => recordDeletedId(m.id, m.nic));
+    clearAllPregnantMothersPermanently();
+    onUpdatePregnantMothers([]);
+    onAuditLog('CLEAR_ALL_PREGNANT_MOTHERS', `Super Admin ${currentUser.name} wiped all pregnant mother records.`);
+    alert(lang === 'ta' ? 'அனைத்து கர்ப்பிணித் தாய்மார் விபரங்களும் வெற்றிகரமாக அழிக்கப்பட்டன.' : 'All pregnant mother records have been wiped.');
+  };
+
+  // Delete single pregnant mother record
+  const handleDeleteSingleMother = (m: PregnantMotherRecord) => {
+    const confirmed = window.confirm(
+      lang === 'ta'
+        ? `${m.name} (${m.nic}) அவர்களின் விபரங்களை நிரந்தரமாக அழிக்க விரும்புகிறீர்களா?`
+        : `Permanently delete pregnant mother record ${m.name} (${m.nic})?`
+    );
+    if (!confirmed) return;
+
+    recordDeletedId(m.id, m.nic);
+    const remaining = pregnantMothers.filter((item) => item.id !== m.id);
+    savePregnantMothers(remaining);
+    onUpdatePregnantMothers(remaining);
+    onAuditLog('DELETE_PREGNANT_MOTHER', `Deleted pregnant mother ${m.name} (${m.nic})`);
+  };
 
   // Working View Tabs: Waiting Queue, Active 10-Month Distribution, Completed Archive
   const [activeTab, setActiveTab] = useState<'WAITING' | 'ACTIVE' | 'COMPLETED'>('ACTIVE');
@@ -420,7 +471,7 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleExportCsv}
             className="px-3 py-2 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -435,6 +486,17 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
             <Printer className="w-4 h-4" />
             <span>{lang === 'ta' ? 'அறிக்கை அச்சிடுக' : 'Print Register'}</span>
           </button>
+          {isSuperAdmin && pregnantMothers.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAllMothers}
+              className="px-3.5 py-2 text-xs font-bold rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-800 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title={lang === 'ta' ? 'அனைத்து கர்ப்பிணித் தாய்மார் விபரங்களையும் நிரந்தரமாக அழி (Super Admin)' : 'Wipe all pregnant mother records'}
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>{lang === 'ta' ? 'அனைத்து தாய்மாரையும் அழி' : 'Clear All Mothers'}</span>
+            </button>
+          )}
           <button
             onClick={handleOpenAddModal}
             className="px-4 py-2 text-xs font-bold rounded-lg bg-pink-700 hover:bg-pink-800 text-white transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
@@ -665,6 +727,13 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
                             முடிவுக்கு நகர்த்துக
                           </button>
                         )}
+                        <button
+                          onClick={() => handleDeleteSingleMother(m)}
+                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded text-[11px] font-bold border border-rose-200 cursor-pointer"
+                          title={lang === 'ta' ? 'இப்பதிவை நிரந்தரமாக அழி' : 'Delete permanently'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 inline" />
+                        </button>
                       </td>
                     </tr>
                   );

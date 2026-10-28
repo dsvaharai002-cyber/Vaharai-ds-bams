@@ -9,7 +9,14 @@ import {
   parseFamiliesFromCsv,
   exportAssistanceToCsv,
 } from '../services/csv';
-import { checkDuplicateAssistance, generateUniqueFamilyQrPayload, clearAllAssistanceRecords } from '../services/storage';
+import {
+  checkDuplicateAssistance,
+  generateUniqueFamilyQrPayload,
+  clearAllAssistanceRecords,
+  clearAllAssistanceRecordsPermanently,
+  recordDeletedId,
+  saveAssistanceRecords,
+} from '../services/storage';
 import {
   Gift,
   AlertTriangle,
@@ -100,12 +107,16 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
   const handleDeleteRecord = (recordId: string) => {
     if (!isSuperAdmin && currentUser?.role !== 'ADMIN 1' && currentUser?.role !== 'ADMIN 2') return;
     const confirmMsg = lang === 'ta'
-      ? 'இந்த உதவிப் பதிவை நிச்சயமாக நீக்க வேண்டுமா?'
-      : 'Are you sure you want to delete this relief record?';
+      ? 'இந்த உதவிப் பதிவை நிச்சயமாக நிரந்தரமாக நீக்க வேண்டுமா?'
+      : 'Are you sure you want to permanently delete this relief record?';
     if (!window.confirm(confirmMsg)) return;
 
     const rec = assistanceRecords.find((r) => r.id === recordId);
+    if (rec) {
+      recordDeletedId(rec.id, rec.beneficiaryNic);
+    }
     const updated = assistanceRecords.filter((r) => r.id !== recordId);
+    saveAssistanceRecords(updated);
     onUpdateAssistanceRecords(updated);
     onAuditLog('DELETE_ASSISTANCE_RECORD', `Deleted assistance record ${rec?.id} for family ${rec?.familyCode}`);
   };
@@ -117,8 +128,19 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
       : 'Caution: All assistance records will be permanently erased. Proceed?';
     if (!window.confirm(confirmMsg)) return;
 
+    const code = window.prompt(
+      lang === 'ta'
+        ? 'நிரந்தரமாக அழிக்க "DELETE" அல்லது "அழி" என தட்டச்சு செய்க:'
+        : 'Type "DELETE" to confirm permanent deletion:'
+    );
+    if (code !== 'DELETE' && code !== 'அழி') {
+      alert(lang === 'ta' ? 'உறுதிப்படுத்தல் சொல் பொருந்தவில்லை. நடவடிக்கை ரத்து செய்யப்பட்டது.' : 'Confirmation text did not match. Aborted.');
+      return;
+    }
+
+    assistanceRecords.forEach((r) => recordDeletedId(r.id, r.beneficiaryNic));
+    clearAllAssistanceRecordsPermanently();
     onUpdateAssistanceRecords([]);
-    clearAllAssistanceRecords();
     onAuditLog('CLEAR_ALL_ASSISTANCE', `Super Admin (${currentUser.name}) cleared all assistance records`);
     alert(lang === 'ta' ? 'அனைத்து உதவி பதிவுகளும் அழிக்கப்பட்டன.' : 'All assistance records have been cleared.');
   };

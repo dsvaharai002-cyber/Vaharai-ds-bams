@@ -67,8 +67,21 @@ import {
   QrCode,
   Printer,
   Sparkles,
+  Trash2,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
-import { createDatabaseSnapshot, pushToCentralDatabase, calculateAge } from '../services/storage';
+import { 
+  createDatabaseSnapshot, 
+  pushToCentralDatabase, 
+  calculateAge,
+  recordDeletedId,
+  recordDeletedIds,
+  clearAllBeneficiariesPermanently,
+  clearAllAssistanceRecordsPermanently,
+  clearAllPregnantMothersPermanently,
+  clearAllLandRecordsPermanently,
+} from '../services/storage';
 import { saveToDesignatedDriveFile, isDriveAutoSyncEnabled } from '../services/googleDrive';
 import { isGoogleDriveAuthenticated } from '../services/auth';
 import { FamilyGroupModal } from './FamilyGroupModal';
@@ -187,6 +200,201 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
 
     return entries;
   }, [beneficiaries, familyDivisionFilter, familySearchQuery]);
+
+  // Super Admin & Admin Deletion Powers for Section / CSV imported records
+  const isSuperAdmin = currentUser.role === 'SUPERADMIN';
+  const canDelete = isSuperAdmin || currentUser.role === 'ADMIN 1' || currentUser.role === 'ADMIN 2';
+  const [selectedRegisteredIds, setSelectedRegisteredIds] = useState<string[]>([]);
+  const [registeredSearchQuery, setRegisteredSearchQuery] = useState<string>('');
+
+  // Items currently registered under the active category
+  const currentCategoryItems = useMemo(() => {
+    let list: any[] = [];
+    if (activeType === 'families' || activeType === 'beneficiaries') {
+      list = beneficiaries;
+    } else if (activeType === 'elderly') {
+      list = beneficiaries.filter(
+        (b) => b.isElderly || calculateAge(b.dob, b.nic) >= 60 || b.welfareScheme === 'ELDERLY' || b.elderlyAllowanceStatus
+      );
+    } else if (activeType === 'pregnant') {
+      list = pregnantMothers || [];
+    } else if (activeType === 'disability') {
+      list = beneficiaries.filter(
+        (b) => b.isPersonWithDisability || b.chronicIllness === 'DISABILITY_PHYSICAL' || b.welfareSchemes?.includes('DISABILITY')
+      );
+    } else if (activeType === 'aswesuma') {
+      list = beneficiaries.filter(
+        (b) => b.welfareScheme?.startsWith('ASWESUMA') || b.welfareSchemes?.some((s) => s.startsWith('ASWESUMA'))
+      );
+    } else if (activeType === 'assistance') {
+      list = assistanceRecords || [];
+    } else if (activeType === 'land') {
+      list = landRecords || [];
+    } else if (activeType === 'users') {
+      list = users;
+    } else {
+      list = beneficiaries;
+    }
+
+    if (registeredSearchQuery.trim()) {
+      const q = registeredSearchQuery.toLowerCase().trim();
+      list = list.filter((item: any) => {
+        const text = `${item.id || ''} ${item.nic || ''} ${item.nameTa || ''} ${item.nameEn || ''} ${item.name || ''} ${item.ownerNic || ''} ${item.ownerNameTa || ''} ${item.permitNo || ''} ${item.familyCode || ''} ${item.phone || ''}`.toLowerCase();
+        return text.includes(q);
+      });
+    }
+    return list;
+  }, [activeType, beneficiaries, pregnantMothers, assistanceRecords, landRecords, users, registeredSearchQuery]);
+
+  const handleClearAllActiveCategory = () => {
+    if (!isSuperAdmin) {
+      alert(lang === 'ta' ? 'அனைத்து தரவுகளையும் அழிக்கும் உரிமை சூப்பர் அட்மினுக்கு மட்டுமே உண்டு.' : 'Only Super Admin can erase all records.');
+      return;
+    }
+    const catName =
+      activeType === 'families' ? (lang === 'ta' ? 'குடும்பங்கள் & பிரஜைகள்' : 'Families & Citizens')
+      : activeType === 'elderly' ? (lang === 'ta' ? 'முதியோர் பதிவுகள்' : 'Senior Citizens')
+      : activeType === 'pregnant' ? (lang === 'ta' ? 'கர்ப்பிணித் தாய்மார் பதிவுகள்' : 'Pregnant Mothers')
+      : activeType === 'disability' ? (lang === 'ta' ? 'அங்கவீனர் பதிவுகள்' : 'Disability Records')
+      : activeType === 'aswesuma' ? (lang === 'ta' ? 'அஸ்வெசும பயனாளிகள்' : 'Aswesuma Beneficiaries')
+      : activeType === 'assistance' ? (lang === 'ta' ? 'நிவாரண உதவி பதிவுகள்' : 'Relief Aid Records')
+      : activeType === 'land' ? (lang === 'ta' ? 'காணிப் பதிவுகள்' : 'Land Records')
+      : activeType === 'users' ? (lang === 'ta' ? 'உத்தியோகத்தர் பயனாளர்கள்' : 'Staff Users')
+      : (lang === 'ta' ? 'பிரஜைகள் தரவுத்தளம்' : 'Citizens');
+
+    const confirmMsg = lang === 'ta'
+      ? `⚠️ கடுமையான எச்சரிக்கை: "${catName}" பிரிவில் உள்ள அனைத்து பதிவுகளும் (${currentCategoryItems.length}) நிரந்தரமாக அழிக்கப்படும்!\n\nநிச்சயமாக அழிக்க விரும்புகிறீர்களா?`
+      : `Warning: ALL records in "${catName}" (${currentCategoryItems.length}) will be permanently erased. Proceed?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const promptText = lang === 'ta' ? 'உறுதிப்படுத்த "DELETE" அல்லது "அழி" என தட்டச்சு செய்யவும்:' : 'Type "DELETE" to confirm:';
+    const answer = window.prompt(promptText);
+    if (answer !== 'DELETE' && answer !== 'அழி') return;
+
+    if (activeType === 'pregnant') {
+      clearAllPregnantMothersPermanently();
+      if (onUpdatePregnantMothers) onUpdatePregnantMothers([]);
+      onAuditLog('CLEAR_ALL_CATEGORY', `Super Admin (${currentUser.name}) erased all pregnant mother records`);
+    } else if (activeType === 'assistance') {
+      clearAllAssistanceRecordsPermanently();
+      if (onUpdateAssistanceRecords) onUpdateAssistanceRecords([]);
+      onAuditLog('CLEAR_ALL_CATEGORY', `Super Admin (${currentUser.name}) erased all assistance relief records`);
+    } else if (activeType === 'land') {
+      clearAllLandRecordsPermanently();
+      if (onUpdateLandRecords) onUpdateLandRecords([]);
+      onAuditLog('CLEAR_ALL_CATEGORY', `Super Admin (${currentUser.name}) erased all land records`);
+    } else if (activeType === 'users') {
+      const superAdminOnly = users.filter((u) => u.role === 'SUPERADMIN');
+      onUpdateUsers(superAdminOnly);
+      onAuditLog('CLEAR_ALL_CATEGORY', `Super Admin (${currentUser.name}) reset staff users`);
+    } else {
+      clearAllBeneficiariesPermanently();
+      onUpdateBeneficiaries([]);
+      onAuditLog('CLEAR_ALL_CATEGORY', `Super Admin (${currentUser.name}) erased all citizen & family records`);
+    }
+
+    setSelectedRegisteredIds([]);
+    setSuccessBanner(lang === 'ta' ? `🗑️ ${catName} அனைத்து விபரங்களும் வெற்றிகரமாக அழிக்கப்பட்டன.` : `All ${catName} records were permanently erased.`);
+    setTimeout(() => {
+      const snapshot = createDatabaseSnapshot();
+      pushToCentralDatabase(snapshot);
+      if (isGoogleDriveAuthenticated() && isDriveAutoSyncEnabled()) {
+        saveToDesignatedDriveFile(snapshot);
+      }
+    }, 50);
+  };
+
+  const handleDeleteSingleRegistered = (item: any) => {
+    if (!canDelete) {
+      alert(lang === 'ta' ? 'பதிவுகளை நீக்கும் அதிகாரம் சூப்பர் அட்மின் மற்றும் அட்மினுக்கு மட்டுமே உண்டு.' : 'Permission denied. Only Super Admin and Admin can delete records.');
+      return;
+    }
+    const name = item.nameTa || item.nameEn || item.name || item.permitNo || item.id;
+    if (!window.confirm(lang === 'ta' ? `"${name}" பதிவை நிச்சயமாக அழிக்க வேண்டுமா?` : `Are you sure you want to delete "${name}"?`)) return;
+
+    if (activeType === 'pregnant' && onUpdatePregnantMothers) {
+      recordDeletedId(item.id, item.nic);
+      const updated = (pregnantMothers || []).filter((m) => m.id !== item.id && (item.nic ? m.nic !== item.nic : true));
+      onUpdatePregnantMothers(updated);
+      onAuditLog('DELETE_PREGNANT_RECORD', `Deleted pregnant mother ${name} (${item.nic || item.id})`);
+    } else if (activeType === 'assistance' && onUpdateAssistanceRecords) {
+      const updated = (assistanceRecords || []).filter((a) => a.id !== item.id);
+      onUpdateAssistanceRecords(updated);
+      onAuditLog('DELETE_ASSISTANCE_RECORD', `Deleted aid record ${item.id} for family ${item.familyCode}`);
+    } else if (activeType === 'land' && onUpdateLandRecords) {
+      const updated = (landRecords || []).filter((l) => l.id !== item.id);
+      onUpdateLandRecords(updated);
+      onAuditLog('DELETE_LAND_RECORD', `Deleted land permit ${item.permitNo || item.id}`);
+    } else if (activeType === 'users') {
+      if (item.role === 'SUPERADMIN' && users.filter((u) => u.role === 'SUPERADMIN').length <= 1) {
+        alert(lang === 'ta' ? 'கடைசி Super Admin கணக்கை அழிக்க முடியாது!' : 'Cannot delete the only Super Admin account!');
+        return;
+      }
+      const updated = users.filter((u) => u.id !== item.id);
+      onUpdateUsers(updated);
+      onAuditLog('DELETE_USER', `Deleted user ${item.name} (${item.id})`);
+    } else {
+      recordDeletedId(item.id, item.nic);
+      const updated = beneficiaries.filter((b) => b.id !== item.id && (item.nic ? b.nic !== item.nic : true));
+      onUpdateBeneficiaries(updated);
+      onAuditLog('DELETE_BENEFICIARY_FROM_CSV_VIEW', `Deleted citizen ${name} (NIC: ${item.nic || item.id})`);
+    }
+
+    setSuccessBanner(lang === 'ta' ? `🗑️ "${name}" பதிவு வெற்றிகரமாக அழிக்கப்பட்டது.` : `Deleted "${name}" successfully.`);
+    setTimeout(() => {
+      const snapshot = createDatabaseSnapshot();
+      pushToCentralDatabase(snapshot);
+      if (isGoogleDriveAuthenticated() && isDriveAutoSyncEnabled()) {
+        saveToDesignatedDriveFile(snapshot);
+      }
+    }, 50);
+  };
+
+  const handleBulkDeleteRegistered = () => {
+    if (!canDelete || selectedRegisteredIds.length === 0) return;
+    const count = selectedRegisteredIds.length;
+    const confirmMsg = lang === 'ta'
+      ? `தேர்ந்தெடுக்கப்பட்ட ${count} பதிவுகளை நிச்சயமாக நீக்க வேண்டுமா?`
+      : `Are you sure you want to delete ${count} selected records?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const idSet = new Set(selectedRegisteredIds);
+    if (activeType === 'pregnant' && onUpdatePregnantMothers) {
+      const toDel = (pregnantMothers || []).filter((m) => idSet.has(m.id) || (m.nic && idSet.has(m.nic)));
+      recordDeletedIds(toDel.map((m) => m.id).concat(toDel.map((m) => m.nic).filter(Boolean)));
+      const updated = (pregnantMothers || []).filter((m) => !idSet.has(m.id) && !(m.nic && idSet.has(m.nic)));
+      onUpdatePregnantMothers(updated);
+    } else if (activeType === 'assistance' && onUpdateAssistanceRecords) {
+      const updated = (assistanceRecords || []).filter((a) => !idSet.has(a.id));
+      onUpdateAssistanceRecords(updated);
+    } else if (activeType === 'land' && onUpdateLandRecords) {
+      const updated = (landRecords || []).filter((l) => !idSet.has(l.id));
+      onUpdateLandRecords(updated);
+    } else if (activeType === 'users') {
+      const updated = users.filter((u) => !idSet.has(u.id) || u.role === 'SUPERADMIN');
+      onUpdateUsers(updated);
+    } else {
+      const toDel = beneficiaries.filter((b) => idSet.has(b.id) || (b.nic && idSet.has(b.nic)));
+      recordDeletedIds(toDel.map((b) => b.id).concat(toDel.map((b) => b.nic).filter(Boolean)));
+      const updated = beneficiaries.filter((b) => !idSet.has(b.id) && !(b.nic && idSet.has(b.nic)));
+      onUpdateBeneficiaries(updated);
+    }
+
+    onAuditLog('BULK_DELETE_CSV_VIEW', `Bulk deleted ${count} records in ${activeType} by ${currentUser.name}`);
+    setSelectedRegisteredIds([]);
+    setSuccessBanner(lang === 'ta' ? `🗑️ ${count} பதிவுகள் வெற்றிகரமாக நீக்கப்பட்டன.` : `Deleted ${count} records successfully.`);
+    setTimeout(() => {
+      const snapshot = createDatabaseSnapshot();
+      pushToCentralDatabase(snapshot);
+      if (isGoogleDriveAuthenticated() && isDriveAutoSyncEnabled()) {
+        saveToDesignatedDriveFile(snapshot);
+      }
+    }, 50);
+  };
+
+  const handleRemovePreviewRow = (idx: number) => {
+    setParsedPreview((prev) => prev.filter((_, i) => i !== idx));
+  };
 
   const handleDownloadSample = () => {
     if (activeType === 'families') {
@@ -632,13 +840,31 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
                 </p>
               </div>
 
-              <button
-                onClick={handleDownloadSample}
-                className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-bold shrink-0 flex items-center gap-1.5 shadow-xs"
-              >
-                <Download className="w-3.5 h-3.5 text-emerald-700" />
-                <span>{lang === 'ta' ? 'மாதிரி கோப்பை பதிவிறக்கு' : 'Download Sample CSV'}</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2.5 py-1.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg border border-slate-200">
+                  {lang === 'ta' ? 'பதிவுகள்:' : 'Total:'} <span className="font-mono text-emerald-800 font-extrabold">{currentCategoryItems.length}</span>
+                </span>
+
+                <button
+                  onClick={handleDownloadSample}
+                  className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-bold shrink-0 flex items-center gap-1.5 shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>{lang === 'ta' ? 'மாதிரி கோப்பை பதிவிறக்கு' : 'Download Sample CSV'}</span>
+                </button>
+
+                {isSuperAdmin && currentCategoryItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllActiveCategory}
+                    className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shrink-0 flex items-center gap-1.5 shadow-xs transition-colors"
+                    title={lang === 'ta' ? 'இப்பிரிவின் அனைத்து விபரங்களையும் நிரந்தரமாக அழி (Super Admin)' : 'Permanently wipe all records in this category'}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{lang === 'ta' ? 'இப்பிரிவை முழுமையாக அழி' : 'Wipe Category Data'}</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Requirement 06: Unique Computer-Generated ID & Assistance Title Input Section */}
@@ -782,6 +1008,7 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
                         <th className="p-2.5">பரப்பு</th>
                         <th className="p-2.5">நிலை</th>
                         <th className="p-2.5">பிரிவு</th>
+                        <th className="p-2.5 text-right">நீக்கு</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -813,6 +1040,16 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
                             </span>
                           </td>
                           <td className="p-2.5 font-mono text-slate-600">{row.divisionCode}</td>
+                          <td className="p-2.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePreviewRow(idx)}
+                              className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
+                              title={lang === 'ta' ? 'இப்பதிவை நீக்கு' : 'Remove row'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -829,13 +1066,14 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
                         <th className="p-2.5">வயது</th>
                         <th className="p-2.5">நலன்புரி உதவிகள் (Checklist)</th>
                         <th className="p-2.5">பிரிவு</th>
+                        <th className="p-2.5 text-right">நீக்கு</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {parsedPreview.map((row, idx) => {
                         const relLabel = getRelationshipTamilLabel(row.familyRelationship);
                         const schemes: WelfareScheme[] = row.welfareSchemes || (row.welfareScheme ? [row.welfareScheme] : []);
-                        const age = calculateAge(row.dob);
+                        const age = calculateAge(row.dob, row.nic);
 
                         return (
                           <tr key={idx} className="hover:bg-slate-50/80">
@@ -866,6 +1104,16 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
                               </div>
                             </td>
                             <td className="p-2.5 font-mono text-slate-600">{row.divisionCode}</td>
+                            <td className="p-2.5 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleRemovePreviewRow(idx)}
+                                className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
+                                title={lang === 'ta' ? 'இப்பதிவை நீக்கு' : 'Remove row'}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
@@ -972,6 +1220,181 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
               )}
             </div>
           )}
+
+          {/* ========================================================================= */}
+          {/* CURRENTLY REGISTERED RECORDS FOR THIS SECTION WITH SUPER ADMIN DELETION   */}
+          {/* ========================================================================= */}
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <span className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg text-xs">📋</span>
+                  <span>
+                    {lang === 'ta'
+                      ? `தற்போது தரவுத்தளத்தில் உள்ள பதிவுகள் (${currentCategoryItems.length})`
+                      : `Currently Stored Records in this Category (${currentCategoryItems.length})`}
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {lang === 'ta'
+                    ? 'சிஎஸ்வி அல்லது படிவங்கள் மூலம் ஏற்கனவே பதிவான விபரங்கள். தேவையற்ற பதிவுகளை இங்கிருந்தும் நிரந்தரமாக நீக்கலாம்.'
+                    : 'Records previously imported via CSV or added manually. Super Admins can permanently delete single or bulk entries.'}
+                </p>
+              </div>
+
+              {canDelete && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selectedRegisteredIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleBulkDeleteRegistered}
+                      className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>
+                        {lang === 'ta'
+                          ? `தெரிவுசெய்தவற்றை நீக்கு (${selectedRegisteredIds.length})`
+                          : `Delete Selected (${selectedRegisteredIds.length})`}
+                      </span>
+                    </button>
+                  )}
+
+                  {isSuperAdmin && currentCategoryItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllActiveCategory}
+                      className="px-3.5 py-1.5 bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-800 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>{lang === 'ta' ? 'அனைத்தையும் அழி (Clear Category)' : 'Clear Entire Category'}</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {currentCategoryItems.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs italic">
+                {lang === 'ta' ? 'இப்பிரிவில் தற்போது எவ்வித பதிவுகளும் இல்லை.' : 'No records currently registered in this section.'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-[460px] border border-slate-200 rounded-xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-700 text-[11px] uppercase tracking-wider sticky top-0 border-b border-slate-200 z-10">
+                    <tr>
+                      {canDelete && (
+                        <th className="p-2.5 w-10 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (selectedRegisteredIds.length === currentCategoryItems.length) {
+                                setSelectedRegisteredIds([]);
+                              } else {
+                                setSelectedRegisteredIds(currentCategoryItems.map((c: any) => c.id || c.nic || c.permitNo));
+                              }
+                            }}
+                            className="p-1 hover:text-emerald-700"
+                            title="Select All"
+                          >
+                            {selectedRegisteredIds.length === currentCategoryItems.length && currentCategoryItems.length > 0 ? (
+                              <CheckSquare className="w-4 h-4 text-emerald-700" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-400" />
+                            )}
+                          </button>
+                        </th>
+                      )}
+                      <th className="p-2.5">#</th>
+                      <th className="p-2.5">அடையாளம் / குறியீடு</th>
+                      <th className="p-2.5">பெயர் / விபரம்</th>
+                      <th className="p-2.5">தேசிய அடையாள அட்டை (NIC)</th>
+                      <th className="p-2.5">வயது / திகதி</th>
+                      <th className="p-2.5">பிரிவு / நிலை</th>
+                      {canDelete && <th className="p-2.5 text-right">நீக்குக</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {currentCategoryItems.slice(0, 100).map((item: any, idx: number) => {
+                      const itemKey = item.id || item.nic || item.permitNo || String(idx);
+                      const isChecked = selectedRegisteredIds.includes(itemKey);
+                      const age = item.dob || item.nic ? calculateAge(item.dob, item.nic) : null;
+
+                      return (
+                        <tr key={itemKey} className={isChecked ? 'bg-rose-50/50' : 'hover:bg-slate-50/80'}>
+                          {canDelete && (
+                            <td className="p-2.5 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedRegisteredIds((prev) => [...prev, itemKey]);
+                                  } else {
+                                    setSelectedRegisteredIds((prev) => prev.filter((id) => id !== itemKey));
+                                  }
+                                }}
+                                className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                              />
+                            </td>
+                          )}
+                          <td className="p-2.5 text-slate-400 font-mono">{idx + 1}</td>
+                          <td className="p-2.5 font-mono font-bold text-slate-800">
+                            {item.familyCode || item.permitNo || item.batchId || item.id}
+                          </td>
+                          <td className="p-2.5">
+                            <div className="font-bold text-slate-900">
+                              {item.nameTa || item.ownerNameTa || item.motherNameTa || item.beneficiaryName || item.nameEn || '-'}
+                            </div>
+                            {(item.nameEn || item.aidDescription) && (
+                              <div className="text-[10px] text-slate-500">
+                                {item.aidDescription || item.nameEn}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-2.5 font-mono text-slate-700 font-semibold">
+                            {item.nic || item.ownerNic || item.motherNic || item.beneficiaryNic || '-'}
+                          </td>
+                          <td className="p-2.5 font-mono text-slate-700">
+                            {age !== null && age > 0 ? (
+                              <span className="font-semibold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                {age} {lang === 'ta' ? 'வயது' : 'yrs'}
+                              </span>
+                            ) : (
+                              item.distributionDate || item.registrationDate || '-'
+                            )}
+                          </td>
+                          <td className="p-2.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800">
+                              {item.divisionCode || item.permitStatus || item.status || 'Active'}
+                            </span>
+                          </td>
+                          {canDelete && (
+                            <td className="p-2.5 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSingleRegistered(item)}
+                                className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-100 rounded-lg transition-colors"
+                                title={lang === 'ta' ? 'இப்பதிவை நிரந்தரமாக அழி' : 'Delete permanently'}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {currentCategoryItems.length > 100 && (
+                  <div className="p-2 text-center text-xs text-slate-500 bg-slate-50 border-t border-slate-200">
+                    {lang === 'ta'
+                      ? `மொத்தம் ${currentCategoryItems.length} பதிவுகளில் முதல் 100 பதிவுகள் காட்டப்படுகின்றன.`
+                      : `Showing first 100 of ${currentCategoryItems.length} records.`}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

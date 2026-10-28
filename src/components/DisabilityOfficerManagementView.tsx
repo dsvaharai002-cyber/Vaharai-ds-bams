@@ -11,9 +11,17 @@ import {
 } from '../types';
 import { Language, translations } from '../translations/i18n';
 import { parseSriLankanNic } from '../utils/nicParser';
-import { calculateAge, generateSystemCitizenId, generateUniqueFamilyCode, generateUniqueFamilyQrPayload } from '../services/storage';
+import {
+  calculateAge,
+  generateSystemCitizenId,
+  generateUniqueFamilyCode,
+  generateUniqueFamilyQrPayload,
+  deleteSingleBeneficiary,
+  recordDeletedId,
+  saveBeneficiaries,
+} from '../services/storage';
 import { downloadCsvFile, parseCsvContent, escapeCsv, getRelationshipTamilLabel } from '../services/csv';
-import { Accessibility, Plus, Upload, Download, Search, FileText, CheckCircle2, AlertTriangle, ShieldCheck, Printer } from 'lucide-react';
+import { Accessibility, Plus, Upload, Download, Search, FileText, CheckCircle2, AlertTriangle, ShieldCheck, Printer, Trash2 } from 'lucide-react';
 import { BeneficiaryIdCardModal } from './BeneficiaryIdCardModal';
 
 interface DisabilityOfficerManagementViewProps {
@@ -120,6 +128,57 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
     setFormPhone('');
     setFormNotes('');
     setShowAddModal(true);
+  };
+
+  const isSuperAdmin = currentUser.role === 'SUPERADMIN';
+
+  // Super Admin: Wipe all disability records permanently
+  const handleClearAllDisability = () => {
+    if (!isSuperAdmin) {
+      alert(lang === 'ta' ? 'அனைத்து மாற்றுத்திறனாளி விபரங்களையும் அழிக்க சுப்பர் அட்மின் அனுமதி தேவை.' : 'Super Admin permission required.');
+      return;
+    }
+    const confirmed = window.confirm(
+      lang === 'ta'
+        ? 'எச்சரிக்கை: பதிவுசெய்யப்பட்ட அனைத்து மாற்றுத்திறனாளி விபரங்களையும் நிரந்தரமாக அழிக்க விரும்புகிறீர்களா? இந்நடவடிக்கையை மீளப்பெற முடியாது.'
+        : 'WARNING: Are you sure you want to permanently delete all disability records?'
+    );
+    if (!confirmed) return;
+
+    const code = window.prompt(
+      lang === 'ta'
+        ? 'நிரந்தரமாக அழிக்க "DELETE" அல்லது "அழி" என தட்டச்சு செய்க:'
+        : 'Type "DELETE" to confirm permanent deletion:'
+    );
+    if (code !== 'DELETE' && code !== 'அழி') {
+      alert(lang === 'ta' ? 'உறுதிப்படுத்தல் சொல் பொருந்தவில்லை. நடவடிக்கை ரத்து செய்யப்பட்டது.' : 'Confirmation text did not match. Aborted.');
+      return;
+    }
+
+    const ids = new Set(disabilityBeneficiaries.map((b) => b.id));
+    disabilityBeneficiaries.forEach((b) => recordDeletedId(b.id, b.nic));
+    const remaining = beneficiaries.filter((b) => !ids.has(b.id));
+    saveBeneficiaries(remaining);
+    onUpdateBeneficiaries(remaining);
+    onAuditLog('CLEAR_ALL_DISABILITY', `Super Admin ${currentUser.name} wiped ${ids.size} disability records.`);
+    alert(lang === 'ta' ? 'அனைத்து மாற்றுத்திறனாளி விபரங்களும் வெற்றிகரமாக அழிக்கப்பட்டன.' : 'All disability records have been wiped.');
+  };
+
+  // Delete single disability citizen
+  const handleDeleteSingleDisability = (b: Beneficiary) => {
+    const confirmed = window.confirm(
+      lang === 'ta'
+        ? `${b.nameTa} (${b.nic}) அவர்களின் விபரங்களை நிரந்தரமாக அழிக்க விரும்புகிறீர்களா?`
+        : `Permanently delete disability record ${b.nameEn || b.nameTa} (${b.nic})?`
+    );
+    if (!confirmed) return;
+
+    recordDeletedId(b.id, b.nic);
+    deleteSingleBeneficiary(b.id);
+    const remaining = beneficiaries.filter((item) => item.id !== b.id);
+    saveBeneficiaries(remaining);
+    onUpdateBeneficiaries(remaining);
+    onAuditLog('DELETE_DISABILITY', `Deleted disability record ${b.nameTa} (${b.nic})`);
   };
 
   const handleSaveDisabilityCitizen = (e: React.FormEvent) => {
@@ -359,6 +418,17 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
               <Upload className="w-4 h-4 text-blue-400" />
               <span>{lang === 'ta' ? 'தனியான CSV பதிவேற்றம்' : 'Disability CSV Upload'}</span>
             </button>
+            {isSuperAdmin && disabilityBeneficiaries.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAllDisability}
+                className="px-3.5 py-2 bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
+                title={lang === 'ta' ? 'அனைத்து மாற்றுத்திறனாளி விபரங்களையும் நிரந்தரமாக அழி (Super Admin)' : 'Wipe all disability records'}
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                <span>{lang === 'ta' ? 'அனைத்து மாற்றுத்திறனாளியையும் அழி' : 'Clear All Disability'}</span>
+              </button>
+            )}
             <button
               onClick={handleDownloadDisabilitySampleCsv}
               className="px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors border border-slate-700"
@@ -495,7 +565,7 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
                 </tr>
               ) : (
                 filteredList.map((b) => {
-                  const age = calculateAge(b.dob);
+                  const age = calculateAge(b.dob, b.nic);
                   return (
                     <tr key={b.id} className="hover:bg-blue-50/40 transition-colors">
                       {/* Family QR / Code */}
@@ -577,12 +647,19 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
                       </td>
 
                       {/* Action */}
-                      <td className="py-3 px-3 text-right whitespace-nowrap">
+                      <td className="py-3 px-3 text-right whitespace-nowrap space-x-1.5">
                         <button
                           onClick={() => setViewingCardCitizen(b)}
                           className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded font-bold text-[11px] transition-colors"
                         >
                           🪪 அடையாள அட்டை
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSingleDisability(b)}
+                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded font-bold text-[11px] border border-rose-200 transition-colors"
+                          title={lang === 'ta' ? 'இப்பதிவை நிரந்தரமாக அழி' : 'Delete permanently'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 inline" />
                         </button>
                       </td>
                     </tr>

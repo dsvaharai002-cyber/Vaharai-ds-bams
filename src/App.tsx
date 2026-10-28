@@ -188,17 +188,17 @@ export default function App() {
       try {
         const driveData = await fetchFromDesignatedDriveFile();
         if (driveData && isMounted && Array.isArray(driveData.beneficiaries) && driveData.beneficiaries.length > 0) {
-          const localItems = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id || b.nic));
+          const localItems = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id, b.nic));
           // Merge: Preserve all local newly added records, add any remote records that haven't been deleted
           const map = new Map<string, Beneficiary>();
           driveData.beneficiaries
-            .filter((b: Beneficiary) => !isRecordDeleted(b.id || b.nic))
+            .filter((b: Beneficiary) => !isRecordDeleted(b.id, b.nic))
             .forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
           localItems.forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
-          const merged = Array.from(map.values());
-          saveBeneficiaries(merged);
+          const merged = Array.from(map.values()).filter((b) => !isRecordDeleted(b.id, b.nic));
+          saveBeneficiaries(merged, false);
           setBeneficiaries(merged);
-          console.log(`[Google Drive] Boot: Auto-loaded ${driveData.beneficiaries.length} records.`);
+          console.log(`[Google Drive] Boot: Auto-loaded ${merged.length} records.`);
         }
       } catch (e) {
         console.warn('[Google Drive] Boot fetch warning:', e);
@@ -214,14 +214,14 @@ export default function App() {
           const central = await fetchCentralDatabase();
           if (central && isMounted) {
             if (Array.isArray(central.beneficiaries) && central.beneficiaries.length > 0) {
-              const localItems = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id || b.nic));
+              const localItems = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id, b.nic));
               const map = new Map<string, Beneficiary>();
               central.beneficiaries
-                .filter((b: Beneficiary) => !isRecordDeleted(b.id || b.nic))
+                .filter((b: Beneficiary) => !isRecordDeleted(b.id, b.nic))
                 .forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
               localItems.forEach((b: Beneficiary) => map.set(b.id || b.nic, b));
-              const merged = Array.from(map.values());
-              saveBeneficiaries(merged);
+              const merged = Array.from(map.values()).filter((b) => !isRecordDeleted(b.id, b.nic));
+              saveBeneficiaries(merged, false);
               setBeneficiaries(merged);
             }
           }
@@ -243,17 +243,18 @@ export default function App() {
         try {
           const driveData = await fetchFromDesignatedDriveFile();
           if (driveData && isMounted && Array.isArray(driveData.beneficiaries)) {
-            const local = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id || b.nic));
+            const local = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id, b.nic));
             const existingNics = new Set(local.map((b) => b.nic));
+            const existingIds = new Set(local.map((b) => b.id));
             const newFromRemote = driveData.beneficiaries.filter(
-              (b: Beneficiary) => !isRecordDeleted(b.id || b.nic) && !existingNics.has(b.nic)
+              (b: Beneficiary) => !isRecordDeleted(b.id, b.nic) && !existingNics.has(b.nic) && !existingIds.has(b.id)
             );
             if (newFromRemote.length > 0) {
               const merged = [...local, ...newFromRemote];
-              saveBeneficiaries(merged);
+              saveBeneficiaries(merged, false);
               setBeneficiaries(merged);
-            } else if (local.length > driveData.beneficiaries.length) {
-              // Local has more records (e.g. newly imported CSV) -> save to Google Drive!
+            } else if (local.length !== driveData.beneficiaries.length) {
+              // Local has changes (new CSV or deletions) -> sync to Google Drive!
               await saveToDesignatedDriveFile(createDatabaseSnapshot());
             }
           }
@@ -267,18 +268,19 @@ export default function App() {
         try {
           const central = await fetchCentralDatabase();
           if (central && isMounted) {
-            const local = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id || b.nic));
-            if (Array.isArray(central.beneficiaries) && central.beneficiaries.length > 0) {
+            const local = loadBeneficiaries().filter((b) => !isRecordDeleted(b.id, b.nic));
+            if (Array.isArray(central.beneficiaries)) {
               const existingNics = new Set(local.map((b) => b.nic));
+              const existingIds = new Set(local.map((b) => b.id));
               const newFromCentral = central.beneficiaries.filter(
-                (b: Beneficiary) => !isRecordDeleted(b.id || b.nic) && !existingNics.has(b.nic)
+                (b: Beneficiary) => !isRecordDeleted(b.id, b.nic) && !existingNics.has(b.nic) && !existingIds.has(b.id)
               );
               if (newFromCentral.length > 0) {
                 const merged = [...local, ...newFromCentral];
-                saveBeneficiaries(merged);
+                saveBeneficiaries(merged, false);
                 setBeneficiaries(merged);
-              } else if (local.length > central.beneficiaries.length) {
-                // Local has more records (e.g. newly imported CSV) -> push to central server!
+              } else if (local.length !== central.beneficiaries.length) {
+                // Local has changes (new CSV or deletions) -> push to central server!
                 await pushToCentralDatabase(createDatabaseSnapshot());
               }
             }

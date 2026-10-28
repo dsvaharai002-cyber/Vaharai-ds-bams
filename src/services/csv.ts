@@ -26,6 +26,57 @@ import {
   calculateTenMonthsDate,
   createDefaultMonthlyCollections,
 } from './storage';
+import { parseSriLankanNic } from '../utils/nicParser';
+
+// Normalize date string from DD/MM/YYYY, DD-MM-YYYY, YYYY/MM/DD to YYYY-MM-DD
+export const normalizeDateString = (dateStr?: string): string => {
+  if (!dateStr || !dateStr.trim()) return '';
+  const s = dateStr.trim();
+  const dmyMatch = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, '0');
+    const month = dmyMatch[2].padStart(2, '0');
+    const year = dmyMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+  const ymdMatch = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = ymdMatch[2].padStart(2, '0');
+    const day = ymdMatch[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return s;
+};
+
+// Derive DOB & Gender accurately: tries extracting from Sri Lankan NIC first if valid
+export const resolveDobAndGender = (
+  rawDob: string | undefined,
+  nic: string | undefined,
+  defaultYear: number = 1995
+): { dob: string; gender?: 'MALE' | 'FEMALE'; age: number } => {
+  const normalized = normalizeDateString(rawDob);
+  const nicParsed = nic ? parseSriLankanNic(nic) : null;
+
+  // If valid NIC exists, prioritize NIC extracted DOB when provided DOB is missing or default
+  if (nicParsed && nicParsed.isValid && nicParsed.birthDate) {
+    if (!normalized || normalized.startsWith('1990-01-01') || normalized.startsWith('1995-01-01') || normalized.startsWith('2000-01-01') || normalized.startsWith('1954-01-01') || normalized.startsWith('1985-01-01') || normalized.startsWith('2005-01-01')) {
+      return {
+        dob: nicParsed.birthDate,
+        gender: nicParsed.gender,
+        age: nicParsed.age ?? calculateAge(nicParsed.birthDate, nic),
+      };
+    }
+  }
+
+  const finalDob = normalized || (nicParsed?.isValid && nicParsed.birthDate ? nicParsed.birthDate : `${defaultYear}-01-01`);
+  const finalAge = calculateAge(finalDob, nic);
+  return {
+    dob: finalDob,
+    gender: nicParsed?.isValid ? nicParsed.gender : undefined,
+    age: finalAge,
+  };
+};
 
 // UTF-8 BOM so Excel opens Tamil Unicode characters accurately without question marks or mojibake
 const UTF8_BOM = '\uFEFF';
@@ -247,8 +298,10 @@ export const parseBeneficiariesFromCsv = (csvText: string): { items: Beneficiary
     const nameTa = (colIndex.nameTa !== -1 ? row[colIndex.nameTa] : row[2])?.trim() || '';
     const nameEn = (colIndex.nameEn !== -1 ? row[colIndex.nameEn] : row[3])?.trim() || nameTa;
     const genderRaw = ((colIndex.gender !== -1 ? row[colIndex.gender] : row[4]) || '').toUpperCase();
-    const gender = genderRaw.startsWith('M') ? 'MALE' : genderRaw.startsWith('F') ? 'FEMALE' : 'OTHER';
-    const dob = (colIndex.dob !== -1 ? row[colIndex.dob] : row[5])?.trim() || '1995-01-01';
+    const rawDob = (colIndex.dob !== -1 ? row[colIndex.dob] : row[5])?.trim();
+    const resolved = resolveDobAndGender(rawDob, nic, 1995);
+    const dob = resolved.dob;
+    const gender = genderRaw.startsWith('M') ? 'MALE' : genderRaw.startsWith('F') ? 'FEMALE' : (resolved.gender || 'OTHER');
     const phone = (colIndex.phone !== -1 ? row[colIndex.phone] : row[6])?.trim() || '';
     const address = (colIndex.address !== -1 ? row[colIndex.address] : row[7])?.trim() || '';
 
@@ -578,8 +631,11 @@ export const parseFamiliesFromCsv = (
     const nameTa = (colIndex.nameTa !== -1 ? row[colIndex.nameTa] : row[4])?.trim() || 'பெயர் குறிப்பிடப்படவில்லை';
     const nameEn = (colIndex.nameEn !== -1 ? row[colIndex.nameEn] : row[5])?.trim() || nameTa;
     const genderRaw = ((colIndex.gender !== -1 ? row[colIndex.gender] : row[6]) || '').toUpperCase();
-    const gender = genderRaw.startsWith('F') || familyRelationship === 'MOTHER' || familyRelationship === 'DAUGHTER' || familyRelationship === 'WIFE' || familyRelationship === 'GRANDMOTHER' ? 'FEMALE' : 'MALE';
-    const dob = (colIndex.dob !== -1 ? row[colIndex.dob] : row[7])?.trim() || '1990-01-01';
+    const rawDob = (colIndex.dob !== -1 ? row[colIndex.dob] : row[7])?.trim();
+    const resolved = resolveDobAndGender(rawDob, nic, 1990);
+    const dob = resolved.dob;
+    const isFemaleRel = familyRelationship === 'MOTHER' || familyRelationship === 'DAUGHTER' || familyRelationship === 'WIFE' || familyRelationship === 'GRANDMOTHER';
+    const gender = genderRaw.startsWith('F') || isFemaleRel ? 'FEMALE' : (resolved.gender || (genderRaw.startsWith('M') ? 'MALE' : 'MALE'));
     const phone = (colIndex.phone !== -1 ? row[colIndex.phone] : row[8])?.trim() || '';
     const address = (colIndex.address !== -1 ? row[colIndex.address] : row[9])?.trim() || `வாகரை (${divisionCode})`;
     const householdNo = (colIndex.household !== -1 ? row[colIndex.household] : row[2])?.trim() || `HH-${divisionCode}-001`;
@@ -732,8 +788,10 @@ export const parseElderlyFromCsv = (
     const nameTa = (colIndex.nameTa !== -1 ? row[colIndex.nameTa] : row[3])?.trim() || 'முதியோர் பிரஜை';
     const nameEn = (colIndex.nameEn !== -1 ? row[colIndex.nameEn] : row[4])?.trim() || nameTa;
     const genderRaw = ((colIndex.gender !== -1 ? row[colIndex.gender] : row[5]) || '').toUpperCase();
-    const gender = genderRaw.startsWith('F') || familyRelationship === 'GRANDMOTHER' || familyRelationship === 'MOTHER' ? 'FEMALE' : 'MALE';
-    const dob = (colIndex.dob !== -1 ? row[colIndex.dob] : row[6])?.trim() || '1954-01-01';
+    const rawDob = (colIndex.dob !== -1 ? row[colIndex.dob] : row[6])?.trim();
+    const resolved = resolveDobAndGender(rawDob, nic, 1954);
+    const dob = resolved.dob;
+    const gender = genderRaw.startsWith('F') || familyRelationship === 'GRANDMOTHER' || familyRelationship === 'MOTHER' ? 'FEMALE' : (resolved.gender || 'MALE');
     const phone = (colIndex.phone !== -1 ? row[colIndex.phone] : row[7])?.trim() || '';
     const address = (colIndex.address !== -1 ? row[colIndex.address] : row[8])?.trim() || `வாகரை (${divisionCode})`;
 
@@ -934,8 +992,8 @@ export const parsePregnantMothersFromCsv = (
     };
     pregnantMothers.push(motherRecord);
 
-    // Also sync as a Beneficiary linked to this Family Code & Family QR!
-    const systemId = generateSystemCitizenId(divisionCode, existingBeneficiaries.length + beneficiaries.length + 1);
+    const systemId = generateSystemCitizenId(divisionCode, i);
+    const resolvedMother = resolveDobAndGender(undefined, nic, 1995);
     const beneficiaryRecord: Beneficiary = {
       id: systemId,
       nic,
@@ -943,7 +1001,7 @@ export const parsePregnantMothersFromCsv = (
       nameTa: name,
       nameEn: name,
       gender: 'FEMALE',
-      dob: '1995-01-01',
+      dob: resolvedMother.dob,
       phone,
       address: `வாகரை (${divisionCode})`,
       divisionCode,
@@ -1066,8 +1124,9 @@ export const parseDisabilityFromCsv = (
 
     const nameTa = nameTaRaw?.trim() || 'மாற்றுத்திறனாளி பிரஜை';
     const nameEn = nameEnRaw?.trim() || nameTa;
-    const gender = (genderRaw?.trim().toUpperCase() === 'FEMALE' || familyRelationship === 'DAUGHTER' || familyRelationship === 'MOTHER') ? 'FEMALE' : 'MALE';
-    const dob = dobRaw?.trim() || '2005-01-01';
+    const resolvedDis = resolveDobAndGender(dobRaw, nic, 2005);
+    const dob = resolvedDis.dob;
+    const gender = (genderRaw?.trim().toUpperCase() === 'FEMALE' || familyRelationship === 'DAUGHTER' || familyRelationship === 'MOTHER') ? 'FEMALE' : (resolvedDis.gender || 'MALE');
     const phone = phoneRaw?.trim() || '';
     const address = addressRaw?.trim() || `வாகரை (${divisionCode})`;
     const disabilityNature = natureRaw?.trim() || 'உடல் ஊனம் (Physical Disability)';
@@ -1213,8 +1272,9 @@ export const parseAswesumaFromCsv = (
 
     const nameTa = nameTaRaw?.trim() || 'அஸ்வெசும பயனாளி';
     const nameEn = nameEnRaw?.trim() || nameTa;
-    const gender = (genderRaw?.trim().toUpperCase() === 'FEMALE' || familyRelationship === 'MOTHER' || familyRelationship === 'WIFE') ? 'FEMALE' : 'MALE';
-    const dob = dobRaw?.trim() || '1985-01-01';
+    const resolvedAsw = resolveDobAndGender(dobRaw, nic, 1985);
+    const dob = resolvedAsw.dob;
+    const gender = (genderRaw?.trim().toUpperCase() === 'FEMALE' || familyRelationship === 'MOTHER' || familyRelationship === 'WIFE') ? 'FEMALE' : (resolvedAsw.gender || 'MALE');
     const phone = phoneRaw?.trim() || '';
     const address = addressRaw?.trim() || `வாகரை (${divisionCode})`;
     const householdNo = householdRaw?.trim() || `HH-${divisionCode}-001`;

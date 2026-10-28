@@ -38,7 +38,14 @@ import {
   Trash2,
   Edit,
 } from 'lucide-react';
-import { generateUniqueFamilyCode, generateUniqueFamilyQrPayload, generateProvisionalNic } from '../services/storage';
+import {
+  generateUniqueFamilyCode,
+  generateUniqueFamilyQrPayload,
+  generateProvisionalNic,
+  clearAllHouseholdsPermanently,
+  recordDeletedId,
+  saveHouseholds,
+} from '../services/storage';
 import { generateQrDataUrl } from '../utils/barcode';
 
 interface FamilyDataCenterViewProps {
@@ -270,6 +277,57 @@ export const FamilyDataCenterView: React.FC<FamilyDataCenterViewProps> = ({
     }
   };
 
+  // Super Admin: Permanently wipe all family records
+  const handleClearAllFamilies = () => {
+    if (!isSuperAdmin) {
+      alert(lang === 'ta' ? 'அனைத்து குடும்பங்களையும் அழிக்க சுப்பர் அட்மின் அனுமதி தேவை.' : 'Super Admin permission required to wipe all family records.');
+      return;
+    }
+    const confirmed = window.confirm(
+      lang === 'ta'
+        ? 'எச்சரிக்கை: பதிவுசெய்யப்பட்ட அனைத்து குடும்ப விபரங்களையும் நிரந்தரமாக அழிக்க விரும்புகிறீர்களா? இந்நடவடிக்கையை மீளப்பெற முடியாது.'
+        : 'WARNING: Are you sure you want to permanently wipe all family records? This cannot be undone.'
+    );
+    if (!confirmed) return;
+
+    const code = window.prompt(
+      lang === 'ta'
+        ? 'நிரந்தரமாக அழிக்க "DELETE" அல்லது "அழி" என தட்டச்சு செய்க:'
+        : 'Type "DELETE" to confirm permanent deletion:'
+    );
+    if (code !== 'DELETE' && code !== 'அழி') {
+      alert(lang === 'ta' ? 'உறுதிப்படுத்தல் சொல் பொருந்தவில்லை. நடவடிக்கை ரத்து செய்யப்பட்டது.' : 'Confirmation text did not match. Aborted.');
+      return;
+    }
+
+    clearAllHouseholdsPermanently();
+    onUpdateHouseholds([]);
+    if (viewingHousehold) setViewingHousehold(null);
+    onAuditLog('CLEAR_ALL_HOUSEHOLDS', `Super Admin ${currentUser.name} wiped all family records.`);
+    alert(lang === 'ta' ? 'அனைத்து குடும்ப விபரங்களும் வெற்றிகரமாக அழிக்கப்பட்டன.' : 'All family records have been wiped.');
+  };
+
+  // Delete a single household
+  const handleDeleteHousehold = (h: HouseholdData) => {
+    if (!canEdit) {
+      alert(lang === 'ta' ? 'குடும்பத்தை அழிக்க அனுமதி இல்லை.' : 'Permission denied to delete family.');
+      return;
+    }
+    const confirmed = window.confirm(
+      lang === 'ta'
+        ? `${h.familyCode} (${h.applicantNameTa}) குடும்ப விபரங்களை நிரந்தரமாக அழிக்க விரும்புகிறீர்களா?`
+        : `Are you sure you want to delete family ${h.familyCode} (${h.applicantNameEn || h.applicantNameTa})?`
+    );
+    if (!confirmed) return;
+
+    recordDeletedId(h.id, h.applicantNic);
+    const updated = households.filter((item) => item.id !== h.id);
+    saveHouseholds(updated);
+    onUpdateHouseholds(updated);
+    if (viewingHousehold?.id === h.id) setViewingHousehold(null);
+    onAuditLog('DELETE_HOUSEHOLD', `Deleted household ${h.familyCode} (ID: ${h.id})`);
+  };
+
   // Add member row in wizard
   const handleAddMemberRow = () => {
     setNewMembersList([
@@ -459,6 +517,18 @@ export const FamilyDataCenterView: React.FC<FamilyDataCenterViewProps> = ({
             >
               <Settings className="w-3.5 h-3.5 text-amber-400" />
               <span>{t.configureScoringWeights}</span>
+            </button>
+          )}
+
+          {isSuperAdmin && households.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAllFamilies}
+              className="px-3.5 py-2 bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-800 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
+              title={lang === 'ta' ? 'அனைத்து குடும்பங்களையும் நிரந்தரமாக அழி (Super Admin)' : 'Wipe all family records (Super Admin)'}
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>{lang === 'ta' ? 'அனைத்து குடும்பங்களையும் அழி' : 'Clear All Families'}</span>
             </button>
           )}
 
@@ -723,6 +793,17 @@ export const FamilyDataCenterView: React.FC<FamilyDataCenterViewProps> = ({
                       <span>அரசு ஆவணம்</span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
+
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteHousehold(h)}
+                        className="p-2 text-rose-600 hover:text-rose-800 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-xl transition-colors"
+                        title={lang === 'ta' ? 'இக்குடும்ப விபரத்தை நிரந்தரமாக அழி' : 'Delete household permanently'}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

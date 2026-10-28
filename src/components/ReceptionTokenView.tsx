@@ -6,7 +6,15 @@ import { VaharaiLogo } from './VaharaiLogo';
 import { CitizenProfileModal } from './CitizenProfileModal';
 import { BeneficiaryIdCardModal } from './BeneficiaryIdCardModal';
 import { OfficeLayoutModal } from './OfficeLayoutModal';
-import { generateSystemCitizenId, generateProvisionalNic, DEFAULT_SERVICES } from '../services/storage';
+import {
+  generateSystemCitizenId,
+  generateProvisionalNic,
+  DEFAULT_SERVICES,
+  clearAllTokensPermanently,
+  recordDeletedId,
+  saveTokens,
+  saveBeneficiaries,
+} from '../services/storage';
 import { parseSriLankanNic } from '../utils/nicParser';
 
 interface ReceptionTokenViewProps {
@@ -279,14 +287,20 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
     let updatedBeneficiaries: Beneficiary[];
     if (existingIndex >= 0) {
       // Update existing citizen record
+      const existing = beneficiaries[existingIndex];
+      const parsedNic = parseSriLankanNic(effectiveNic);
       const updatedItem: Beneficiary = {
-        ...beneficiaries[existingIndex],
+        ...existing,
         nameTa: citizenName.trim(),
         nameEn: citizenNameEn.trim() || citizenName.trim(),
-        phone: citizenPhone.trim() || beneficiaries[existingIndex].phone,
-        address: citizenAddress.trim() || beneficiaries[existingIndex].address,
+        phone: citizenPhone.trim() || existing.phone,
+        address: citizenAddress.trim() || existing.address,
         divisionCode: selectedDivision,
         familyCode: effectiveFamilyCode,
+        dob: (existing.dob && existing.dob !== '1995-01-01' && existing.dob !== '1990-01-01')
+          ? existing.dob
+          : (parsedNic.isValid && parsedNic.dob ? parsedNic.dob : existing.dob || '1995-01-01'),
+        gender: parsedNic.isValid && parsedNic.gender ? parsedNic.gender : existing.gender,
         isPregnantMother,
         pregnancyStageMonths: isPregnantMother ? pregnancyMonths : undefined,
         isPersonWithDisability,
@@ -298,22 +312,28 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
       updatedBeneficiaries = [...beneficiaries];
       updatedBeneficiaries[existingIndex] = updatedItem;
     } else {
-      // Create new citizen
+      // Create new citizen with NIC auto-parsed DOB and gender
+      const parsedNic = parseSriLankanNic(effectiveNic);
+      const effectiveDob = parsedNic.isValid && parsedNic.dob ? parsedNic.dob : '1995-01-01';
+      const effectiveGender = parsedNic.isValid && parsedNic.gender
+        ? parsedNic.gender
+        : (isPregnantMother ? 'FEMALE' : 'MALE');
+
       const newBeneficiary: Beneficiary = {
         id: systemId,
         nic: effectiveNic,
         isProvisionalNic: effectiveNic.startsWith('TNIC'),
         nameTa: citizenName.trim(),
         nameEn: citizenNameEn.trim() || citizenName.trim(),
-        gender: 'MALE',
-        dob: '1995-01-01',
+        gender: effectiveGender,
+        dob: effectiveDob,
         phone: citizenPhone.trim(),
         address: citizenAddress.trim() || `வாகரை (${selectedDivision})`,
         divisionCode: selectedDivision,
         familyHead: true,
         householdNo: `HH-${selectedDivision}-001`,
         familyCode: effectiveFamilyCode,
-        familyRelationship: 'HEAD',
+        familyRelationship: isPregnantMother ? 'MOTHER' : 'HEAD',
         isPregnantMother,
         pregnancyStageMonths: isPregnantMother ? pregnancyMonths : undefined,
         isPersonWithDisability,
@@ -333,6 +353,7 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
       updatedBeneficiaries = [newBeneficiary, ...beneficiaries];
     }
 
+    saveBeneficiaries(updatedBeneficiaries);
     if (onUpdateBeneficiaries) {
       onUpdateBeneficiaries(updatedBeneficiaries);
     }
@@ -423,12 +444,14 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
   const handleDeleteToken = (tokenId: string) => {
     if (!isSuperAdmin && currentUser?.role !== 'ADMIN 1' && currentUser?.role !== 'ADMIN 2') return;
     const confirmMsg = lang === 'ta'
-      ? 'இந்த டோக்கனை நிச்சயமாக நீக்க வேண்டுமா?'
-      : 'Are you sure you want to delete this token?';
+      ? 'இந்த டோக்கனை நிச்சயமாக நிரந்தரமாக நீக்க வேண்டுமா?'
+      : 'Are you sure you want to delete this token permanently?';
     if (!window.confirm(confirmMsg)) return;
 
+    recordDeletedId(tokenId);
     const tok = tokens.find((tItem) => tItem.id === tokenId);
     const updated = tokens.filter((tItem) => tItem.id !== tokenId);
+    saveTokens(updated);
     onUpdateTokens(updated);
     onAuditLog('DELETE_TOKEN', `Deleted token ${tok?.tokenNumber || tokenId} for ${tok?.officerToMeet}`);
   };
@@ -440,6 +463,18 @@ export const ReceptionTokenView: React.FC<ReceptionTokenViewProps> = ({
       : 'Caution: All queue tokens will be permanently erased. Proceed?';
     if (!window.confirm(confirmMsg)) return;
 
+    const code = window.prompt(
+      lang === 'ta'
+        ? 'நிரந்தரமாக அழிக்க "DELETE" அல்லது "அழி" என தட்டச்சு செய்க:'
+        : 'Type "DELETE" to confirm permanent deletion:'
+    );
+    if (code !== 'DELETE' && code !== 'அழி') {
+      alert(lang === 'ta' ? 'உறுதிப்படுத்தல் சொல் பொருந்தவில்லை. நடவடிக்கை ரத்து செய்யப்பட்டது.' : 'Confirmation text did not match. Aborted.');
+      return;
+    }
+
+    tokens.forEach((t) => recordDeletedId(t.id));
+    clearAllTokensPermanently();
     onUpdateTokens([]);
     onAuditLog('CLEAR_ALL_TOKENS', `Super Admin (${currentUser?.name}) erased all queue tokens`);
     alert(lang === 'ta' ? 'அனைத்து டோக்கன்களும் வெற்றிகரமாக அழிக்கப்பட்டன.' : 'All tokens cleared successfully.');

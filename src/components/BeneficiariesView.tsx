@@ -16,7 +16,14 @@ import { BeneficiaryIdCardModal } from './BeneficiaryIdCardModal';
 import { PrintableFilteredReportModal } from './PrintableFilteredReportModal';
 import { DisabilityOfficerManagementView } from './DisabilityOfficerManagementView';
 import { FamilyGroupModal } from './FamilyGroupModal';
-import { calculateAge, generateSystemCitizenId, generateProvisionalNic } from '../services/storage';
+import { 
+  calculateAge, 
+  generateSystemCitizenId, 
+  generateProvisionalNic,
+  recordDeletedId,
+  recordDeletedIds,
+  clearAllBeneficiariesPermanently,
+} from '../services/storage';
 import { generateQrDataUrl } from '../utils/barcode';
 import { parseSriLankanNic } from '../utils/nicParser';
 import { getRelationshipTamilLabel } from '../services/csv';
@@ -163,7 +170,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
       }
 
       // 5. 16 Years Completed filter (For NIC applications)
-      const age = calculateAge(b.dob);
+      const age = calculateAge(b.dob, b.nic);
       if (filterYouth16Only && age !== 16) {
         return false;
       }
@@ -371,14 +378,19 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
 
     const qrPayload = manualQr || formData.qrPayload || `VHR-DS|ID:${id}|NIC:${nic}|DIV:${divisionCode}|MED:${formData.chronicIllness}|SCHEME:${primaryWelfareScheme}`;
 
+    const nicParsed = parseSriLankanNic(nic);
+    const resolvedDob = formData.dob && formData.dob !== '1995-01-01' && formData.dob !== '2000-01-01'
+      ? formData.dob
+      : (nicParsed.isValid && nicParsed.birthDate ? nicParsed.birthDate : (formData.dob || '1995-01-01'));
+
     const recordToSave: Beneficiary = {
       id,
       nic,
       isProvisionalNic: isProvisional,
       nameTa: formData.nameTa.trim(),
       nameEn: formData.nameEn?.trim() || formData.nameTa.trim(),
-      gender: formData.gender || 'MALE',
-      dob: formData.dob || '1995-01-01',
+      gender: formData.gender || (nicParsed.isValid && nicParsed.gender ? nicParsed.gender : 'MALE'),
+      dob: resolvedDob,
       phone: formData.phone?.trim() || '',
       address: formData.address?.trim() || '',
       divisionCode,
@@ -432,9 +444,10 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
       return;
     }
     if (!window.confirm(t.deleteConfirm)) return;
+    recordDeletedId(b.id, b.nic);
     const updated = beneficiaries.filter((item) => item.id !== b.id);
     onUpdateBeneficiaries(updated);
-    onAuditLog('DELETE_BENEFICIARY', `Deleted citizen ${b.nameEn} (ID: ${b.id})`);
+    onAuditLog('DELETE_BENEFICIARY', `Deleted citizen ${b.nameEn} (ID: ${b.id}, NIC: ${b.nic})`);
   };
 
   // Super Admin Bulk Delete & Clear All Tools
@@ -463,6 +476,8 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
       : `Are you sure you want to delete the ${selectedIds.size} selected records?`;
     if (!window.confirm(confirmMsg)) return;
 
+    const toDelete = beneficiaries.filter((b) => selectedIds.has(b.id));
+    recordDeletedIds(toDelete.map((b) => b.id).concat(toDelete.map((b) => b.nic).filter(Boolean)));
     const updated = beneficiaries.filter((b) => !selectedIds.has(b.id));
     onUpdateBeneficiaries(updated);
     onAuditLog('BULK_DELETE_BENEFICIARIES', `Deleted ${selectedIds.size} citizens in bulk by ${currentUser.name}`);
@@ -479,6 +494,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
     const promptText = lang === 'ta' ? 'உறுதிப்படுத்த "DELETE" அல்லது "அழி" என தட்டச்சு செய்யவும்:' : 'Type "DELETE" to confirm:';
     const answer = window.prompt(promptText);
     if (answer === 'DELETE' || answer === 'அழி') {
+      clearAllBeneficiariesPermanently();
       onUpdateBeneficiaries([]);
       onAuditLog('CLEAR_ALL_BENEFICIARIES', `Super Admin (${currentUser.name}) wiped all citizen records`);
       setSelectedIds(new Set());
@@ -784,7 +800,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                 </tr>
               ) : (
                 paginatedBeneficiaries.map((b) => {
-                  const age = calculateAge(b.dob);
+                  const age = calculateAge(b.dob, b.nic);
                   const activeSchemes = (b.welfareSchemes && b.welfareSchemes.length > 0)
                     ? b.welfareSchemes
                     : (b.welfareScheme && b.welfareScheme !== 'NONE' ? [b.welfareScheme] : []);
@@ -1386,7 +1402,7 @@ export const BeneficiariesView: React.FC<BeneficiariesViewProps> = ({
                   />
                   {formData.dob && (
                     <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">
-                      {t.age}: {calculateAge(formData.dob)} {t.yearsOld}
+                      {t.age}: {calculateAge(formData.dob, formData.nic)} {t.yearsOld}
                     </span>
                   )}
                 </div>

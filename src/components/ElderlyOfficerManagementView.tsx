@@ -11,7 +11,7 @@ import {
 } from '../types';
 import { Language, translations } from '../translations/i18n';
 import { parseSriLankanNic } from '../utils/nicParser';
-import { calculateAge, generateSystemCitizenId } from '../services/storage';
+import { calculateAge, generateSystemCitizenId, deleteSingleBeneficiary, recordDeletedId, saveBeneficiaries } from '../services/storage';
 import { downloadCsvFile, escapeCsv, getRelationshipTamilLabel } from '../services/csv';
 import {
   HeartHandshake,
@@ -29,6 +29,7 @@ import {
   X,
   Phone,
   FileSpreadsheet,
+  Trash2,
 } from 'lucide-react';
 import { BeneficiaryIdCardModal } from './BeneficiaryIdCardModal';
 
@@ -52,13 +53,14 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
   const t = translations[lang];
 
   // Role separation
+  const isSuperAdmin = currentUser.role === 'SUPERADMIN';
   const isGramaNiladhari = currentUser.role === 'GRAMANIILATHARI';
   const officerDivision = isGramaNiladhari ? currentUser.division || '211' : '';
 
   // Filter ONLY senior citizens (Age >= 60, or isElderly, or ELDERLY welfare scheme)
   const elderlyCitizens = useMemo(() => {
     return beneficiaries.filter((b) => {
-      const age = calculateAge(b.dob);
+      const age = calculateAge(b.dob, b.nic);
       return b.isElderly || age >= 60 || b.welfareScheme === 'ELDERLY' || b.elderlyAllowanceStatus;
     });
   }, [beneficiaries]);
@@ -119,6 +121,56 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
       current.add(scheme);
     }
     setFormWelfareSchemes(Array.from(current));
+  };
+
+  // Super Admin: Wipe all elderly records permanently
+  const handleClearAllElderly = () => {
+    if (!isSuperAdmin) {
+      alert(lang === 'ta' ? 'அனைத்து முதியோர் விபரங்களையும் அழிக்க சுப்பர் அட்மின் அனுமதி தேவை.' : 'Super Admin permission required to wipe elderly records.');
+      return;
+    }
+    const confirmed = window.confirm(
+      lang === 'ta'
+        ? 'எச்சரிக்கை: பதிவுசெய்யப்பட்ட அனைத்து முதியோர் விபரங்களையும் நிரந்தரமாக அழிக்க விரும்புகிறீர்களா? இந்நடவடிக்கையை மீளப்பெற முடியாது.'
+        : 'WARNING: Are you sure you want to permanently delete all senior citizen records?'
+    );
+    if (!confirmed) return;
+
+    const code = window.prompt(
+      lang === 'ta'
+        ? 'நிரந்தரமாக அழிக்க "DELETE" அல்லது "அழி" என தட்டச்சு செய்க:'
+        : 'Type "DELETE" to confirm permanent deletion:'
+    );
+    if (code !== 'DELETE' && code !== 'அழி') {
+      alert(lang === 'ta' ? 'உறுதிப்படுத்தல் சொல் பொருந்தவில்லை. நடவடிக்கை ரத்து செய்யப்பட்டது.' : 'Confirmation text did not match. Aborted.');
+      return;
+    }
+
+    const elderlyIds = new Set(elderlyCitizens.map((b) => b.id));
+    elderlyCitizens.forEach((b) => recordDeletedId(b.id, b.nic));
+
+    const remaining = beneficiaries.filter((b) => !elderlyIds.has(b.id));
+    saveBeneficiaries(remaining);
+    onUpdateBeneficiaries(remaining);
+    onAuditLog('CLEAR_ALL_ELDERLY', `Super Admin ${currentUser.name} wiped ${elderlyIds.size} senior citizen records.`);
+    alert(lang === 'ta' ? 'அனைத்து முதியோர் விபரங்களும் வெற்றிகரமாக அழிக்கப்பட்டன.' : 'All senior citizen records have been wiped.');
+  };
+
+  // Delete a single senior citizen
+  const handleDeleteSingleElderly = (b: Beneficiary) => {
+    const confirmed = window.confirm(
+      lang === 'ta'
+        ? `${b.nameTa} (${b.nic}) அவர்களின் விபரங்களை நிரந்தரமாக அழிக்க விரும்புகிறீர்களா?`
+        : `Permanently delete senior citizen record ${b.nameEn || b.nameTa} (${b.nic})?`
+    );
+    if (!confirmed) return;
+
+    recordDeletedId(b.id, b.nic);
+    deleteSingleBeneficiary(b.id);
+    const remaining = beneficiaries.filter((item) => item.id !== b.id);
+    saveBeneficiaries(remaining);
+    onUpdateBeneficiaries(remaining);
+    onAuditLog('DELETE_ELDERLY', `Deleted elderly citizen ${b.nameTa} (${b.nic})`);
   };
 
   const handleOpenAddModal = () => {
@@ -378,7 +430,7 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleExportCsv}
             className="px-3 py-2 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -393,6 +445,17 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
             <Printer className="w-4 h-4" />
             <span>{lang === 'ta' ? 'அறிக்கை அச்சிடுக' : 'Print Report'}</span>
           </button>
+          {isSuperAdmin && elderlyCitizens.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAllElderly}
+              className="px-3.5 py-2 text-xs font-bold rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-800 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title={lang === 'ta' ? 'அனைத்து முதியோர் விபரங்களையும் நிரந்தரமாக அழி (Super Admin)' : 'Wipe all senior citizen records'}
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>{lang === 'ta' ? 'அனைத்து முதியோரையும் அழி' : 'Clear All Elderly'}</span>
+            </button>
+          )}
           <button
             onClick={handleOpenAddModal}
             className="px-4 py-2 text-xs font-bold rounded-lg bg-amber-700 hover:bg-amber-800 text-white transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
@@ -542,7 +605,7 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
                 </tr>
               ) : (
                 filteredList.map((b) => {
-                  const age = calculateAge(b.dob);
+                  const age = calculateAge(b.dob, b.nic);
                   return (
                     <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-4 font-mono font-medium">
@@ -647,6 +710,13 @@ export const ElderlyOfficerManagementView: React.FC<ElderlyOfficerManagementView
                           className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded text-[11px] font-bold border border-amber-200 cursor-pointer"
                         >
                           திருத்துக
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSingleElderly(b)}
+                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded text-[11px] font-bold border border-rose-200 cursor-pointer"
+                          title={lang === 'ta' ? 'இப்பதிவை நிரந்தரமாக அழி' : 'Delete permanently'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 inline" />
                         </button>
                       </td>
                     </tr>

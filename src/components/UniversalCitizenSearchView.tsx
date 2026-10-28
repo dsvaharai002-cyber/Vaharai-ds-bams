@@ -237,7 +237,7 @@ export const UniversalCitizenSearchView: React.FC<UniversalCitizenSearchViewProp
                 <div>
                   <span className="text-slate-500 block mb-0.5">வயது & பாலினம்:</span>
                   <strong className="text-slate-900 block font-mono">
-                    {calculateAge(matchedData.citizen.dob)} வயது ({matchedData.citizen.gender === 'MALE' ? 'ஆண்' : 'பெண்'})
+                    {calculateAge(matchedData.citizen.dob, matchedData.citizen.nic)} வயது ({matchedData.citizen.gender === 'MALE' ? 'ஆண்' : 'பெண்'})
                   </strong>
                   <span className="text-slate-500 block font-mono">பிறந்த திகதி: {matchedData.citizen.dob}</span>
                 </div>

@@ -20,20 +20,24 @@
 
 /* Print Styles for 58mm / 80mm Thermal Receipt Printers, ID Passes, and PDF Filtered Reports */
 @media print {
-  body * {
-    visibility: hidden;
-  }
-
-  .no-print {
+  /* Hide non-printable app chrome */
+  nav, header, aside, .sidebar-container, .no-print, button, input[type="file"], .print-hide {
     display: none !important;
   }
 
-  /* When printing thermal slip (58mm / 80mm) */
-  #thermal-slip,
-  #thermal-slip * {
-    visibility: visible;
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
   }
 
+  /* When printing thermal slip (58mm / 80mm) */
+  body:has(#thermal-slip) * {
+    visibility: hidden;
+  }
+  body:has(#thermal-slip) #thermal-slip,
+  body:has(#thermal-slip) #thermal-slip * {
+    visibility: visible;
+  }
   #thermal-slip {
     position: absolute;
     left: 0;
@@ -46,11 +50,13 @@
   }
 
   /* When printing ID Card */
-  #printable-id-card,
-  #printable-id-card * {
+  body:has(#printable-id-card) * {
+    visibility: hidden;
+  }
+  body:has(#printable-id-card) #printable-id-card,
+  body:has(#printable-id-card) #printable-id-card * {
     visibility: visible;
   }
-
   #printable-id-card {
     position: absolute;
     left: 10mm;
@@ -61,11 +67,13 @@
   }
 
   /* When printing Filtered Data PDF Report */
-  #printable-report-area,
-  #printable-report-area * {
+  body:has(#printable-report-area) * {
+    visibility: hidden;
+  }
+  body:has(#printable-report-area) #printable-report-area,
+  body:has(#printable-report-area) #printable-report-area * {
     visibility: visible;
   }
-
   #printable-report-area {
     position: absolute;
     left: 0;
@@ -75,14 +83,17 @@
     padding: 10mm;
     border: none !important;
     box-shadow: none !important;
+    background: white !important;
   }
 
   /* When printing AI Executive Report */
-  #ai-report-paper,
-  #ai-report-paper * {
+  body:has(#ai-report-paper) * {
+    visibility: hidden;
+  }
+  body:has(#ai-report-paper) #ai-report-paper,
+  body:has(#ai-report-paper) #ai-report-paper * {
     visibility: visible;
   }
-
   #ai-report-paper {
     position: absolute;
     left: 0;
@@ -92,5 +103,30 @@
     padding: 10mm;
     border: none !important;
     box-shadow: none !important;
+  }
+
+  /* When printing Petition Receipt */
+  body:has(#printable-petition-receipt) * {
+    visibility: hidden;
+  }
+  body:has(#printable-petition-receipt) #printable-petition-receipt,
+  body:has(#printable-petition-receipt) #printable-petition-receipt * {
+    visibility: visible;
+  }
+  #printable-petition-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 10mm;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* General print when no specialized modal is active: main content prints cleanly! */
+  body:not(:has(#thermal-slip)):not(:has(#printable-id-card)):not(:has(#printable-report-area)):not(:has(#ai-report-paper)):not(:has(#printable-petition-receipt)) main,
+  body:not(:has(#thermal-slip)):not(:has(#printable-id-card)):not(:has(#printable-report-area)):not(:has(#ai-report-paper)):not(:has(#printable-petition-receipt)) main * {
+    visibility: visible !important;
   }
 }

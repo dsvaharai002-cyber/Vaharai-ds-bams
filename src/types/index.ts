@@ -639,3 +639,53 @@ export const calculateFamilyPovertyScore = (
     },
   };
 };
+
+// ================= PUBLIC REQUESTS & COMPLAINTS / GRIEVANCE REDRESS (Requirement 07) ================= //
+export type PetitionDepartment =
+  | 'LAND'                // காணிப் பிரிவு (Land Branch)
+  | 'ASWESUMA_SAMURDHI'   // அஸ்வெசும & சமுர்த்தி (Aswesuma & Samurdhi)
+  | 'ELDERLY'             // முதியோர் நலன்புரி பிரிவு (Elderly Welfare)
+  | 'DISABILITY'          // மாற்றுத்திறனாளிகள் நலன்புரி பிரிவு (Disability Welfare)
+  | 'MATERNITY'           // கர்ப்பிணித் தாய்மார் & போசணை பிரிவு (Maternity & Nutrition)
+  | 'GRAMA_NILADHARI'     // கிராம அலுவலர் நிர்வாகம் (Grama Niladhari Unit)
+  | 'PLANNING'            // திட்டமிடல் கிளை (Planning Branch)
+  | 'GENERAL_ADMIN';      // பொது நிர்வாகம் / பிரதேச செயலாளர் (Divisional Secretary / General)
+
+export type PetitionStatus =
+  | 'PENDING'             // நிலுவையில் (Pending / Received)
+  | 'INQUIRY'             // விசாரணை (Under Inquiry / Hearing)
+  | 'FIELD_INSPECTION'    // கள ஆய்வு (Field Inspection)
+  | 'RESOLVED'            // தீர்க்கப்பட்டது (Resolved)
+  | 'REJECTED';           // நிராகரிக்கப்பட்டது (Rejected)
+
+export type PetitionType = 'REQUEST' | 'COMPLAINT'; // கோரிக்கை அல்லது முறைப்பாடு
+
+export interface PublicPetition {
+  id: string; // e.g. "PET-2026-001"
+  tokenNumber?: string;
+  citizenNic: string;
+  citizenName: string;
+  phone?: string;
+  address?: string;
+  divisionCode: string; // e.g. "211"
+  targetDepartment: PetitionDepartment;
+  requestType: PetitionType;
+  subject: string;
+  description: string;
+  submittedDate: string;
+  status: PetitionStatus;
+  priority: 'NORMAL' | 'HIGH' | 'URGENT';
+  assignedOfficer?: string;
+  assignedOfficerRole?: string;
+  inquiryDate?: string;
+  inquiryNotes?: string;
+  fieldInspectionDate?: string;
+  fieldInspectionOfficer?: string;
+  fieldInspectionFindings?: string;
+  resolutionDecision?: string;
+  resolvedDate?: string;
+  resolvedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+

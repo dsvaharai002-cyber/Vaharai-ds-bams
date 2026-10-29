@@ -11,6 +11,7 @@ import {
   LandRecord,
   HouseholdData,
   PovertyScoringWeights,
+  PublicPetition,
 } from './types';
 import { Language } from './translations/i18n';
 import {
@@ -35,6 +36,8 @@ import {
   saveHouseholds,
   loadPovertyWeights,
   savePovertyWeights,
+  loadPetitions,
+  savePetitions,
   isRecordDeleted,
   fetchCentralDatabase,
   pushToCentralDatabase,
@@ -72,6 +75,8 @@ import { AssistanceDistributionView } from './components/AssistanceDistributionV
 import { ServiceManagementView } from './components/ServiceManagementView';
 import { ElderlyOfficerManagementView } from './components/ElderlyOfficerManagementView';
 import { PregnantMothersView } from './components/PregnantMothersView';
+import { DisabilityOfficerManagementView } from './components/DisabilityOfficerManagementView';
+import { PublicPetitionsView } from './components/PublicPetitionsView';
 import { LandManagementView } from './components/LandManagementView';
 import { FamilyDataCenterView } from './components/FamilyDataCenterView';
 import { UniversalCitizenSearchView } from './components/UniversalCitizenSearchView';
@@ -99,6 +104,7 @@ export default function App() {
   const [landRecords, setLandRecords] = useState<LandRecord[]>(() => loadLandRecords());
   const [households, setHouseholds] = useState<HouseholdData[]>(() => loadHouseholds());
   const [povertyWeights, setPovertyWeights] = useState<PovertyScoringWeights>(() => loadPovertyWeights());
+  const [petitions, setPetitions] = useState<PublicPetition[]>(() => loadPetitions());
 
   // Cloud & Drive Sync Status State
   const [driveSyncStatus, setDriveSyncStatus] = useState<DriveSyncStatus>(() => getDriveSyncStatus());
@@ -132,7 +138,7 @@ export default function App() {
         } else if (found.role === 'MATERNITY_OFFICER' || found.role === 'ECDO') {
           setCurrentTab('maternity');
         } else if (found.role === 'DISABILITY_OFFICER') {
-          setCurrentTab('beneficiaries');
+          setCurrentTab('disability');
         }
       }
     }
@@ -401,6 +407,11 @@ export default function App() {
     savePovertyWeights(weights);
   };
 
+  const handleUpdatePetitions = (newPetitions: PublicPetition[]) => {
+    setPetitions(newPetitions);
+    savePetitions(newPetitions);
+  };
+
   const handleDatabaseReload = () => {
     setUsers(loadUsers());
     setBeneficiaries(loadBeneficiaries());
@@ -413,6 +424,7 @@ export default function App() {
     setLandRecords(loadLandRecords());
     setHouseholds(loadHouseholds());
     setPovertyWeights(loadPovertyWeights());
+    setPetitions(loadPetitions());
   };
 
   const handleQuickSyncNow = async () => {
@@ -564,20 +576,21 @@ export default function App() {
 
   const canAccessElderly = isAdmin || isElderlyOfficer || isGramaNiladhari;
   const canAccessMaternity = isAdmin || isMaternityOfficer || isGramaNiladhari;
+  const canAccessDisability = isAdmin || isDisabilityOfficer || isGramaNiladhari || currentUser.role === 'DATAENRY OFFCER';
   const canAccessLand = isAdmin || isLandOfficer;
   const canAccessFamilyCenter = !isReception && !isNormal && !isLandOfficer;
 
   let safeTab = currentTab;
   if (isNormal) {
     safeTab = 'live-display';
-  } else if (isLandOfficer && currentTab !== 'universal-search') {
+  } else if (isLandOfficer && currentTab !== 'universal-search' && currentTab !== 'petitions') {
     safeTab = 'land';
-  } else if (isElderlyOfficer && currentTab !== 'universal-search') {
+  } else if (isElderlyOfficer && currentTab !== 'universal-search' && currentTab !== 'petitions') {
     safeTab = 'elderly';
-  } else if (isMaternityOfficer && currentTab !== 'universal-search') {
+  } else if (isMaternityOfficer && currentTab !== 'universal-search' && currentTab !== 'petitions') {
     safeTab = 'maternity';
-  } else if (isDisabilityOfficer && currentTab !== 'universal-search') {
-    safeTab = 'beneficiaries';
+  } else if (isDisabilityOfficer && currentTab !== 'universal-search' && currentTab !== 'petitions') {
+    safeTab = 'disability';
   } else if (currentTab === 'land' && !canAccessLand) {
     safeTab = 'dashboard';
   } else if (currentTab === 'family-center' && !canAccessFamilyCenter) {
@@ -599,6 +612,8 @@ export default function App() {
   } else if (currentTab === 'elderly' && !canAccessElderly) {
     safeTab = 'dashboard';
   } else if (currentTab === 'maternity' && !canAccessMaternity) {
+    safeTab = 'dashboard';
+  } else if (currentTab === 'disability' && !canAccessDisability) {
     safeTab = 'dashboard';
   }
 
@@ -695,6 +710,28 @@ export default function App() {
             currentUser={currentUser}
             lang={lang}
             onUpdatePregnantMothers={handleUpdatePregnantMothers}
+            onAuditLog={handleAuditLog}
+          />
+        )}
+
+        {safeTab === 'disability' && (
+          <DisabilityOfficerManagementView
+            beneficiaries={beneficiaries}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdateBeneficiaries={handleUpdateBeneficiaries}
+            onAuditLog={handleAuditLog}
+          />
+        )}
+
+        {safeTab === 'petitions' && (
+          <PublicPetitionsView
+            petitions={petitions}
+            divisions={divisions}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdatePetitions={handleUpdatePetitions}
             onAuditLog={handleAuditLog}
           />
         )}

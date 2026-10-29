@@ -77,6 +77,7 @@ import {
   calculateAge,
   recordDeletedId,
   recordDeletedIds,
+  removeDeletedId,
   clearAllBeneficiariesPermanently,
   clearAllAssistanceRecordsPermanently,
   clearAllPregnantMothersPermanently,
@@ -575,6 +576,7 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
     } else if (activeType === 'pregnant') {
       // Update both Beneficiaries and PregnantMothers in sync
       const newCitizens = parsedPreview as Beneficiary[];
+      newCitizens.forEach((c) => removeDeletedId(c.id, c.nic));
       const existingMap = new Map(beneficiaries.map((b) => [b.nic, b]));
       for (const item of newCitizens) {
         existingMap.set(item.nic, item);
@@ -582,6 +584,7 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
       onUpdateBeneficiaries(Array.from(existingMap.values()));
 
       if (onUpdatePregnantMothers && parsedPregnantMothers.length > 0) {
+        parsedPregnantMothers.forEach((m) => removeDeletedId(m.id, m.nic));
         const motherMap = new Map(pregnantMothers.map((m) => [m.nic, m]));
         for (const item of parsedPregnantMothers) {
           motherMap.set(item.nic, item);
@@ -603,6 +606,8 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
       activeType === 'beneficiaries'
     ) {
       const newItems = parsedPreview as Beneficiary[];
+      // Issue 01 fix: Remove tombstone IDs so re-uploaded families after deletion are fully active
+      newItems.forEach((item) => removeDeletedId(item.id, item.nic));
       const existingMap = new Map(beneficiaries.map((b) => [b.nic, b]));
       for (const item of newItems) {
         existingMap.set(item.nic, item);

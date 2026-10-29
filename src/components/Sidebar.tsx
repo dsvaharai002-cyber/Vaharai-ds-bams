@@ -29,6 +29,7 @@ import {
   Baby,
   Compass,
   Home,
+  Accessibility,
 } from 'lucide-react';
 import { DriveSyncStatus } from '../services/googleDrive';
 
@@ -84,6 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canAccessBeneficiaries = !isReception && !isNormal && !isElderlyOfficer && !isMaternityOfficer && !isLandOfficer;
   const canAccessElderly = (isAdmin || isElderlyOfficer || isGramaNiladhari) && !isLandOfficer;
   const canAccessMaternity = (isAdmin || isMaternityOfficer || isGramaNiladhari) && !isLandOfficer;
+  const canAccessDisability = (isAdmin || isDisabilityOfficer || isGramaNiladhari || currentUser?.role === 'DATAENRY OFFCER') && !isLandOfficer;
   const canAccessCsv = (isAdmin || currentUser?.role === 'DATAENRY OFFCER') && !isNormal && !isLandOfficer;
   const canAccessDashboard = !isNormal && !isElderlyOfficer && !isMaternityOfficer && !isLandOfficer;
   const canAccessReception = !isNormal && !isElderlyOfficer && !isMaternityOfficer && !isLandOfficer;
@@ -98,6 +100,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             subtitle: lang === 'ta' ? 'NIC / QR சகல தரவுகள்' : '360° Citizen Dossier',
             icon: Search,
             badge: lang === 'ta' ? 'தேடல்' : 'Search',
+          },
+        ]
+      : []),
+    ...(!isNormal
+      ? [
+          {
+            id: 'petitions',
+            title: lang === 'ta' ? 'கோரிக்கைகள் & முறைப்பாடுகள்' : 'Public Requests & Petitions',
+            subtitle: lang === 'ta' ? 'கள ஆய்வு, விசாரணை & தீர்வு' : 'Inquiries, Inspections & Resolutions',
+            icon: ClipboardList,
+            badge: lang === 'ta' ? 'கோரிக்கை' : 'Petitions',
           },
         ]
       : []),
@@ -180,16 +193,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
           },
         ]
       : []),
+    ...(canAccessDisability
+      ? [
+          {
+            id: 'disability',
+            title: lang === 'ta' ? 'அங்கவீனர் / மாற்றுத்திறனாளிகள்' : 'Disability Welfare',
+            subtitle: lang === 'ta' ? 'விசேட தேவை & நலன்புரி பதிவேடு' : 'Disability Registry & Cards',
+            icon: Accessibility,
+            badge: lang === 'ta' ? 'அங்கவீனர்' : 'Disability',
+          },
+        ]
+      : []),
     ...(canAccessBeneficiaries
       ? [
           {
             id: 'beneficiaries',
-            title: currentUser?.role === 'DISABILITY_OFFICER'
-              ? (lang === 'ta' ? 'அங்கவீனர் பதிவேடு' : 'Disability Registry')
-              : t.navBeneficiaries,
-            subtitle: currentUser?.role === 'DISABILITY_OFFICER'
-              ? (lang === 'ta' ? 'மாற்றுத்திறனாளிகள் தளம்' : 'Disability Welfare Portal')
-              : (lang === 'ta' ? 'பிரஜை விபரம் & அட்டை' : 'Citizens registry'),
+            title: t.navBeneficiaries,
+            subtitle: lang === 'ta' ? 'பிரஜை விபரம் & அட்டை' : 'Citizens registry',
             icon: Users,
           },
         ]

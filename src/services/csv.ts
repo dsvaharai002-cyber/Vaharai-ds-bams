@@ -915,9 +915,20 @@ export const generatePregnantMothersSampleCsv = (): string => {
   return sampleRows.join('\n');
 };
 
+export const generateHistoricalPregnantMothersSampleCsv = (): string => {
+  return [
+    'Family_Code,Family_Relationship,NIC,Name_Tamil,Division_Code,Phone,Registration_Date,Completed_Date,Pregnancy_Number,Stamp_No,Stamp_Value,Status,Notes',
+    'FAM-211-011,MOTHER,199278400123,செல்வராசா பிரேமிலா,211,0771234567,2023-03-10,2024-01-10,1,STAMP-2023-011,4500,COMPLETED,2023ம் ஆண்டு 10 மாத போசணை முத்திரை நிறைவு',
+    'FAM-212-045,MOTHER,199081200345,கனகரத்தினம் சுபாஷினி,212,0772345678,2024-01-15,2024-11-15,2,STAMP-2024-045,4500,COMPLETED,2024ம் ஆண்டு 10 மாத போசணை முத்திரை நிறைவு',
+    'FAM-213A-078,MOTHER,199564300789,பாலச்சந்திரன் கவிதா,213A,0773456789,2024-06-20,2025-04-20,1,STAMP-2024-078,4500,COMPLETED,2024-2025ம் ஆண்டு 10 மாத போசணை முத்திரை நிறைவு',
+    'FAM-211C-092,MOTHER,199351200456,முருகதாஸ் தேவகி,211C,0774567890,2025-02-05,2025-12-05,3,STAMP-2025-092,4500,COMPLETED,2025ம் ஆண்டு 10 மாத போசணை முத்திரை நிறைவு'
+  ].join('\n');
+};
+
 export const parsePregnantMothersFromCsv = (
   csvText: string,
-  existingBeneficiaries: Beneficiary[]
+  existingBeneficiaries: Beneficiary[] = [],
+  forceCompleted: boolean = false
 ): {
   beneficiaries: Beneficiary[];
   pregnantMothers: PregnantMotherRecord[];
@@ -929,44 +940,70 @@ export const parsePregnantMothersFromCsv = (
   const beneficiaries: Beneficiary[] = [];
   const pregnantMothers: PregnantMotherRecord[] = [];
   const errors: string[] = [];
+  const headers = rows[0].map((h) => h.trim().toLowerCase());
+
+  const colIndex = {
+    familyCode: headers.findIndex((h) => h.includes('family') || h.includes('fam')),
+    rel: headers.findIndex((h) => h.includes('relationship') || h.includes('rel')),
+    nic: headers.findIndex((h) => h.includes('nic') || h.includes('அடையாள')),
+    name: headers.findIndex((h) => h.includes('name') || h.includes('பெயர்')),
+    division: headers.findIndex((h) => h.includes('division') || h.includes('பிரிவு') || h.includes('gn')),
+    phone: headers.findIndex((h) => h.includes('phone') || h.includes('mobile') || h.includes('தொலைபேசி')),
+    regDate: headers.findIndex((h) => h.includes('registration_date') || h.includes('reg') || h.includes('பதிவு')),
+    completedDate: headers.findIndex((h) => h.includes('completed') || h.includes('completion') || h.includes('முடிவு')),
+    pregnancyNum: headers.findIndex((h) => h.includes('pregnancy') || h.includes('parity') || h.includes('குழந்தை') || h.includes('தவணை')),
+    stampNo: headers.findIndex((h) => h.includes('stamp_no') || h.includes('stamp number') || h.includes('stamp') || h.includes('முத்திரை')),
+    stampValue: headers.findIndex((h) => h.includes('value') || h.includes('amount') || h.includes('பெறுமதி')),
+    welfare: headers.findIndex((h) => h.includes('welfare') || h.includes('aid') || h.includes('உதவி')),
+    status: headers.findIndex((h) => h.includes('status') || h.includes('நிலை')),
+    notes: headers.findIndex((h) => h.includes('note') || h.includes('remark') || h.includes('குறிப்பு')),
+  };
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (row.length < 3 || !row.some((c) => c.trim())) continue;
+    if (row.length < 2 || !row.some((c) => c.trim())) continue;
 
-    const [
-      familyCodeRaw,
-      relRaw,
-      nicRaw,
-      nameRaw,
-      divisionRaw,
-      phoneRaw,
-      regDateRaw,
-      pregnancyNumRaw,
-      stampNoRaw,
-      stampValueRaw,
-      welfareRaw,
-      notesRaw
-    ] = row;
+    // Smart column extraction with fallback to positions if headers didn't match
+    const name = (colIndex.name !== -1 ? row[colIndex.name] : (colIndex.nic === 0 ? row[1] : row[3]))?.trim() || 'கர்ப்பிணித் தாய்';
+    const nicRaw = (colIndex.nic !== -1 ? row[colIndex.nic] : (colIndex.name === 0 ? row[1] : row[2]))?.trim();
+    const divisionCode = (colIndex.division !== -1 ? row[colIndex.division] : row[4])?.trim() || '211';
+    const nic = nicRaw || generateProvisionalNic(divisionCode);
 
-    const divisionCode = divisionRaw?.trim() || '211';
-    const familyCode = familyCodeRaw?.trim().toUpperCase() || `FAM-${divisionCode}-${Math.floor(Math.random() * 900 + 100)}`;
+    const familyCode = (colIndex.familyCode !== -1 ? row[colIndex.familyCode] : '')?.trim().toUpperCase() || `FAM-${divisionCode}-${Math.floor(Math.random() * 900 + 100)}`;
+    const relRaw = colIndex.rel !== -1 ? row[colIndex.rel] : '';
     const familyRelationship = parseRelationshipString(relRaw || 'MOTHER');
-    const nic = nicRaw?.trim() || generateProvisionalNic(divisionCode);
-    const name = nameRaw?.trim() || 'கர்ப்பிணித் தாய்';
-    const phone = phoneRaw?.trim() || '';
-    const regDate = regDateRaw?.trim() || new Date().toISOString().slice(0, 10);
-    const pregnancyNumber = parseInt(pregnancyNumRaw?.trim() || '1') || 1;
-    const stampNo = stampNoRaw?.trim() || `STAMP-${divisionCode}-${i}`;
-    const stampValue = parseFloat(stampValueRaw?.trim() || '4500') || 4500;
-    const notes = notesRaw?.trim() || 'கர்ப்பிணித் தாய் CSV பதிவு';
 
+    const phone = (colIndex.phone !== -1 ? row[colIndex.phone] : '')?.trim() || '';
+    const regDate = normalizeDateString(colIndex.regDate !== -1 ? row[colIndex.regDate] : '') || new Date().toISOString().slice(0, 10);
+    const pregnancyNumber = parseInt((colIndex.pregnancyNum !== -1 ? row[colIndex.pregnancyNum] : '1')?.trim() || '1') || 1;
+    const stampNo = (colIndex.stampNo !== -1 ? row[colIndex.stampNo] : '')?.trim();
+    const stampValue = parseFloat((colIndex.stampValue !== -1 ? row[colIndex.stampValue] : '4500')?.trim() || '4500') || 4500;
+    const notesRaw = (colIndex.notes !== -1 ? row[colIndex.notes] : '')?.trim() || '';
+
+    const statusRaw = (colIndex.status !== -1 ? row[colIndex.status] : '')?.trim().toUpperCase() || '';
+    const isCompleted = forceCompleted || statusRaw.includes('COMPLET') || statusRaw.includes('முடிவ');
+    const completedDate = isCompleted
+      ? normalizeDateString(colIndex.completedDate !== -1 ? row[colIndex.completedDate] : '') || calculateTenMonthsDate(regDate)
+      : undefined;
+
+    const welfareRaw = colIndex.welfare !== -1 ? row[colIndex.welfare] : '';
     let welfareSchemes = parseWelfareChecklistString(welfareRaw);
     if (!welfareSchemes.includes('PREGNANT_NUTRITION')) welfareSchemes.unshift('PREGNANT_NUTRITION');
 
-    // Create PregnantMotherRecord
     const expectedCompletionDate = calculateTenMonthsDate(regDate);
-    const monthlyCollections = createDefaultMonthlyCollections();
+
+    // If completed (e.g. past 3-year historical batch), mark all 10 months collected
+    const monthlyCollections = createDefaultMonthlyCollections().map((col) => {
+      if (isCompleted) {
+        return {
+          ...col,
+          collected: true,
+          collectedDate: completedDate || expectedCompletionDate,
+          collectedByOfficer: 'வரலாற்றுப் பதிவு (Historical Record)',
+        };
+      }
+      return col;
+    });
 
     const motherRecord: PregnantMotherRecord = {
       id: `MAT-${divisionCode}-${Date.now().toString().slice(-4)}-${i}`,
@@ -979,14 +1016,15 @@ export const parsePregnantMothersFromCsv = (
       welfareSchemes,
       registrationDate: regDate,
       expectedCompletionDate,
+      completedDate,
       stampIssueDate: regDate,
-      stampNumber: stampNo,
+      stampNumber: stampNo || (isCompleted ? `HIST-STAMP-${divisionCode}-${i}` : undefined),
       stampValue,
       pregnancyNumber,
       monthlyCollections,
-      isCompleted: false,
-      status: stampNo ? 'ACTIVE_COLLECTING' : 'WAITING_STAMP',
-      notes,
+      isCompleted,
+      status: isCompleted ? 'COMPLETED' : stampNo ? 'ACTIVE_COLLECTING' : 'WAITING_STAMP',
+      notes: notesRaw || (isCompleted ? 'கடந்த 3 வருட வரலாற்று பதிவு (10 மாதங்கள் நிறைவு)' : 'கர்ப்பிணித் தாய் பதிவு'),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1010,7 +1048,7 @@ export const parsePregnantMothersFromCsv = (
       familyCode,
       familyRelationship,
       isPregnantMother: true,
-      pregnancyStageMonths: 5,
+      pregnancyStageMonths: isCompleted ? undefined : 6,
       welfareScheme: 'PREGNANT_NUTRITION',
       welfareSchemes,
       welfareStatus: 'ACTIVE',
@@ -1018,7 +1056,7 @@ export const parsePregnantMothersFromCsv = (
       barcode: nic,
       qrPayload: `ID:${systemId}|NIC:${nic}|DIV:${divisionCode}|FAM:${familyCode}|ROLE:PREGNANT`,
       familyQrPayload: generateUniqueFamilyQrPayload(familyCode, divisionCode),
-      notes: `${notes} · முத்திரை: ${stampNo} (ரூ. ${stampValue})`,
+      notes: `${motherRecord.notes} · முத்திரை: ${stampNo || 'நிறைவு'}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

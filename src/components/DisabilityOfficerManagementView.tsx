@@ -530,9 +530,23 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
         </div>
       </div>
 
-      {/* Disability Table */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-        <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
+      {/* Disability Table & Printable Area */}
+      <div id="printable-report-area" className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+        {/* Printable Official Header */}
+        <div className="hidden print:block p-4 border-b-2 border-slate-900 text-center mb-2">
+          <h2 className="text-base font-black text-slate-900 tracking-wide uppercase">
+            கோறளைப்பற்று வடக்கு - வாகரை பிரதேச செயலகம்
+          </h2>
+          <p className="text-xs font-bold text-slate-700">
+            Divisional Secretariat - Koralaipattu North (Vaharai) · மாற்றுத்திறனாளிகள் / விசேட தேவையுடையோர் பதிவேடு
+          </p>
+          <div className="mt-2 flex items-center justify-between text-[10px] text-slate-600 font-mono border-t border-slate-300 pt-1">
+            <span>அறிக்கை அச்சிட்ட திகதி: {new Date().toLocaleDateString('en-CA')}</span>
+            <span>அதிகாரி: {currentUser.name} ({currentUser.role})</span>
+          </div>
+        </div>
+
+        <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs no-print">
           <span className="font-bold text-slate-700">
             {lang === 'ta' ? `காட்டப்படும் பதிவுகள்: ${filteredList.length}` : `Records Shown: ${filteredList.length}`}
           </span>
@@ -552,7 +566,7 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
                 <th className="py-3 px-3">{t.division}</th>
                 <th className="py-3 px-3">அங்கவீனத்தின் தன்மை</th>
                 <th className="py-3 px-3">உருவான காரணம்</th>
-                <th className="py-3 px-3 text-right">{t.actions}</th>
+                <th className="py-3 px-3 text-right no-print">{t.actions}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -647,7 +661,7 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
                       </td>
 
                       {/* Action */}
-                      <td className="py-3 px-3 text-right whitespace-nowrap space-x-1.5">
+                      <td className="py-3 px-3 text-right whitespace-nowrap space-x-1.5 no-print">
                         <button
                           onClick={() => setViewingCardCitizen(b)}
                           className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded font-bold text-[11px] transition-colors"
@@ -673,17 +687,18 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
 
       {/* Modal: New Disability Citizen Registration */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden my-4">
-            <div className="bg-blue-950 p-4 text-white flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden my-auto max-h-[calc(100vh-2.5rem)] flex flex-col">
+            <div className="bg-blue-950 p-4 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <Accessibility className="w-5 h-5 text-blue-300" />
                 <h3 className="text-sm font-bold">புதிய மாற்றுத்திறனாளி பதிவு (Disability Officer)</h3>
               </div>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-300 hover:text-white text-sm">✕</button>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-300 hover:text-white text-sm cursor-pointer">✕</button>
             </div>
 
-            <form onSubmit={handleSaveDisabilityCitizen} className="p-4 sm:p-5 space-y-3 max-h-[82vh] overflow-y-auto text-xs">
+            <form onSubmit={handleSaveDisabilityCitizen} className="p-4 sm:p-5 flex flex-col flex-1 overflow-hidden text-xs">
+              <div className="space-y-3 overflow-y-auto pr-1 flex-1 py-1">
               {/* Family QR Code & Relationship (Requirement 03) */}
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-2.5">
                 <div className="flex items-center justify-between">
@@ -904,32 +919,33 @@ export const DisabilityOfficerManagementView: React.FC<DisabilityOfficerManageme
                   className="w-full px-3 py-1.5 border border-slate-300 rounded-lg"
                 />
               </div>
+            </div>
 
-              <div className="pt-2 flex justify-end gap-2 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold"
-                >
-                  {t.cancel}
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl font-bold shadow-xs"
-                >
-                  பதிவு செய்க
-                </button>
-              </div>
-            </form>
-          </div>
+            <div className="pt-3 flex justify-end gap-2 border-t border-slate-200 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold cursor-pointer"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl font-bold shadow-xs cursor-pointer"
+              >
+                பதிவு செய்க
+              </button>
+            </div>
+          </form>
         </div>
-      )}
+      </div>
+    )}
 
       {/* Modal: Dedicated Disability CSV Upload */}
       {showCsvModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden">
-            <div className="bg-slate-900 p-4 text-white flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden my-auto max-h-[calc(100vh-2.5rem)] flex flex-col">
+            <div className="bg-slate-900 p-4 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <Upload className="w-5 h-5 text-blue-400" />
                 <h3 className="text-sm font-bold">மாற்றுத்திறனாளிகள் தனியான CSV பதிவேற்றம்</h3>

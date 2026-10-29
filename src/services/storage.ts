@@ -17,6 +17,7 @@ import {
   PovertyScoringWeights,
   DEFAULT_POVERTY_WEIGHTS,
   calculateFamilyPovertyScore,
+  PublicPetition,
 } from '../types';
 import initialDatabaseSeed from '../data/central_database.json';
 import { scheduleAutoDriveSync } from './googleDrive';
@@ -34,6 +35,7 @@ const STORAGE_KEYS = {
   LAND_RECORDS: 'vaharai_ds_land_records_v6',
   HOUSEHOLDS: 'vaharai_ds_households_v6',
   POVERTY_WEIGHTS: 'vaharai_ds_poverty_weights_v6',
+  PETITIONS: 'vaharai_ds_petitions_v6',
   DELETED_IDS: 'vaharai_ds_deleted_ids_v6',
   INITIALIZED: 'vaharai_ds_initialized_v6',
 };
@@ -551,6 +553,9 @@ export const loadPregnantMothers = (): PregnantMotherRecord[] => {
 };
 
 export const savePregnantMothers = (records: PregnantMotherRecord[]) => {
+  records.forEach((m) => {
+    removeDeletedId(m.id, m.nic);
+  });
   setStoredData(STORAGE_KEYS.PREGNANT_MOTHERS, records);
   scheduleCentralSync();
 };
@@ -628,6 +633,10 @@ export const saveBeneficiaries = (items: Beneficiary[], trackDeletions: boolean 
       }
     }
   }
+  // Explicitly un-tombstone all saved citizens so re-uploaded/re-entered citizens and families succeed
+  items.forEach((b) => {
+    removeDeletedId(b.id, b.nic);
+  });
   setStoredData(STORAGE_KEYS.BENEFICIARIES, items);
   scheduleCentralSync();
 };
@@ -760,6 +769,9 @@ export const loadLandRecords = (): LandRecord[] => {
 };
 
 export const saveLandRecords = (records: LandRecord[]) => {
+  records.forEach((l) => {
+    removeDeletedId(l.id, l.ownerNic);
+  });
   setStoredData(STORAGE_KEYS.LAND_RECORDS, records);
   scheduleCentralSync();
 };
@@ -896,6 +908,10 @@ export const loadHouseholds = (): HouseholdData[] => {
 };
 
 export const saveHouseholds = (households: HouseholdData[]) => {
+  households.forEach((h) => {
+    removeDeletedId(h.id, h.applicantNic);
+    if (h.familyCode) removeDeletedId(h.familyCode);
+  });
   setStoredData(STORAGE_KEYS.HOUSEHOLDS, households);
   scheduleCentralSync();
 };
@@ -917,6 +933,133 @@ export const clearAllHouseholds = () => {
   setStoredData(STORAGE_KEYS.HOUSEHOLDS, []);
   scheduleCentralSync();
 };
+
+// ================= PUBLIC REQUESTS & COMPLAINTS (PETITIONS) STORE (Requirement 07) ================= //
+export const DEFAULT_PETITIONS: PublicPetition[] = [
+  {
+    id: 'REQ-211-2026-001',
+    tokenNumber: 'T-102',
+    citizenNic: '891902697V',
+    citizenName: 'சின்னப்பு விஜயகுமார்',
+    phone: '0760539158',
+    divisionCode: '211A',
+    targetDepartment: 'LAND',
+    requestType: 'REQUEST',
+    subject: 'அரச காணி அனுமதிப்பத்திரம் எல்லை மீளளவீடு மற்றும் புதுப்பித்தல் கோரிக்கை',
+    description: 'காயான்கேணி பகுதியில் அமைந்திருக்கும் அரச விவசாய காணியின் எல்லை வாய்க்கால் தொடர்பாக அயலவருடன் சர்ச்சை ஏற்பட்டுள்ளதால் எல்லை மீளளவீடு கோரப்பட்டுள்ளது.',
+    submittedDate: '2026-01-15',
+    status: 'FIELD_INSPECTION',
+    priority: 'HIGH',
+    assignedOfficer: 'காணி உத்தியோகத்தர் (Land Officer)',
+    assignedOfficerRole: 'LAND_OFFICER',
+    fieldInspectionDate: '2026-02-02',
+    fieldInspectionOfficer: 'கள உத்தியோகத்தர் (Field Officer)',
+    fieldInspectionFindings: 'கள ஆய்வு பூர்த்தி செய்யப்பட்டது. வரைபடம் மீளாய்வு செய்யப்பட்டு அனுமதிப்பத்திரம் புதுப்பிக்க பரிந்துரைக்கப்பட்டது.',
+    createdAt: '2026-01-15T10:30:00Z',
+    updatedAt: '2026-02-02T14:20:00Z',
+  },
+  {
+    id: 'CMP-213-2026-002',
+    tokenNumber: 'T-145',
+    citizenNic: '741239845V',
+    citizenName: 'கணபதிப்பிள்ளை சிவலிங்கம்',
+    phone: '0771234567',
+    divisionCode: '213',
+    targetDepartment: 'ASWESUMA_SAMURDHI',
+    requestType: 'COMPLAINT',
+    subject: 'அஸ்வெசும வறுமை நிலை வகைப்படுத்தல் மேன்முறையீடு மற்றும் மீளாய்வு',
+    description: 'குடும்பத்தில் சிறுநீரக நோயாளி மற்றும் மாணவி இருக்கும் நிலையில் இடைக்கால உதவிப் பிரிவில் சேர்க்கப்பட்டுள்ளதாக முறையீடு.',
+    submittedDate: '2026-01-20',
+    status: 'INQUIRY',
+    priority: 'URGENT',
+    assignedOfficer: 'அஸ்வெசும அபிவிருத்தி உத்தியோகத்தர்',
+    assignedOfficerRole: 'ADMIN 1',
+    inquiryDate: '2026-02-05',
+    inquiryNotes: 'மருத்துவ ஆவணங்கள் பெறப்பட்டு மாவட்ட நலன்புரி சபை கூட்டத்திற்கு மேன்முறையீடு அனுப்பப்பட்டுள்ளது.',
+    createdAt: '2026-01-20T09:15:00Z',
+    updatedAt: '2026-02-05T11:00:00Z',
+  },
+  {
+    id: 'REQ-212-2026-003',
+    tokenNumber: 'T-168',
+    citizenNic: '195531200194',
+    citizenName: 'பொன்னம்பலம் செல்லையா',
+    phone: '0714567890',
+    divisionCode: '212',
+    targetDepartment: 'ELDERLY',
+    requestType: 'REQUEST',
+    subject: '70+ முதியோர் கொடுப்பனவு வங்கி கணக்கு மாற்றம் & நேரடி கொடுப்பனவு கோரிக்கை',
+    description: 'நடமாட்ட சிரமம் காரணமாக மாதாந்த கொடுப்பனவை வீட்டிற்கே பெற்றுக்கொள்ள வழிவகை செய்யக் கோரிக்கை.',
+    submittedDate: '2026-02-10',
+    status: 'RESOLVED',
+    priority: 'NORMAL',
+    assignedOfficer: 'முதியோர் நலன்புரி உத்தியோகத்தர்',
+    assignedOfficerRole: 'ELDERLY_OFFICER',
+    resolutionDecision: 'தபால் அலுவலகம் ஊடாக தபால்காரர் மூலம் நேரடி கொடுப்பனவு அனுமதிக்கப்பட்டது.',
+    resolvedDate: '2026-02-18',
+    resolvedBy: 'பிரதேச செயலாளர்',
+    createdAt: '2026-02-10T11:00:00Z',
+    updatedAt: '2026-02-18T16:00:00Z',
+  },
+  {
+    id: 'REQ-211-2026-004',
+    tokenNumber: 'T-189',
+    citizenNic: '199654300982',
+    citizenName: 'சிவராசா துஷிதா',
+    phone: '0776543210',
+    divisionCode: '211',
+    targetDepartment: 'MATERNITY',
+    requestType: 'REQUEST',
+    subject: 'போசணை முத்திரை கூட்டுறவு விற்பனை நிலைய மாற்றம்',
+    description: 'வசிப்பிடம் இடம் மாறியுள்ளதால் அருகிலுள்ள கூட்டுறவு சங்க விற்பனை நிலையத்திற்கு முத்திரை பெறுதலை மாற்றுதல்.',
+    submittedDate: '2026-02-22',
+    status: 'RESOLVED',
+    priority: 'NORMAL',
+    assignedOfficer: 'கர்ப்பிணித் தாய்மார் பதிவாளர்',
+    assignedOfficerRole: 'MATERNITY_OFFICER',
+    resolutionDecision: 'கூட்டுறவு நிலைய பதிவேட்டில் மாற்றம் செய்யப்பட்டு புதிய விற்பனை நிலையத்திற்கு அட்டை இடமாற்றம் செய்யப்பட்டது.',
+    resolvedDate: '2026-02-23',
+    resolvedBy: 'ECDO உத்தியோகத்தர்',
+    createdAt: '2026-02-22T08:45:00Z',
+    updatedAt: '2026-02-23T10:15:00Z',
+  },
+  {
+    id: 'REQ-213B-2026-005',
+    tokenNumber: 'T-204',
+    citizenNic: '198821400891',
+    citizenName: 'கந்தசாமி தர்மன்',
+    phone: '0773344556',
+    divisionCode: '213B',
+    targetDepartment: 'DISABILITY',
+    requestType: 'REQUEST',
+    subject: 'சக்கர நாற்காலி மற்றும் விசேட உதவி உபகரணங்கள் பெறுவதற்கான விண்ணப்பம்',
+    description: 'விபத்தினால் கால்கள் செயலிழந்த குடும்ப உறுப்பினருக்கு சக்கர நாற்காலி கோரிக்கை.',
+    submittedDate: '2026-02-28',
+    status: 'PENDING',
+    priority: 'HIGH',
+    assignedOfficer: 'மாற்றுத்திறனாளிகள் நலன்புரி உத்தியோகத்தர்',
+    assignedOfficerRole: 'DISABILITY_OFFICER',
+    createdAt: '2026-02-28T14:00:00Z',
+    updatedAt: '2026-02-28T14:00:00Z',
+  }
+];
+
+export const loadPetitions = (): PublicPetition[] => {
+  return getStoredData<PublicPetition[]>(STORAGE_KEYS.PETITIONS, DEFAULT_PETITIONS);
+};
+
+export const savePetitions = (petitions: PublicPetition[]) => {
+  setStoredData(STORAGE_KEYS.PETITIONS, petitions);
+  scheduleCentralSync();
+  notifyCrossTabSync('PETITIONS_UPDATED');
+};
+
+export const clearAllPetitionsPermanently = () => {
+  setStoredData(STORAGE_KEYS.PETITIONS, []);
+  scheduleCentralSync();
+  notifyCrossTabSync('ALL_PETITIONS_CLEARED');
+};
+
 
 // Super Admin Clear All Tools
 export const clearAllBeneficiaries = (): void => {
@@ -1140,6 +1283,7 @@ export const createDatabaseSnapshot = () => {
     landRecords: loadLandRecords(),
     households: loadHouseholds(),
     povertyWeights: loadPovertyWeights(),
+    petitions: loadPetitions(),
   };
 };
 
@@ -1157,6 +1301,7 @@ export const restoreDatabaseFromSnapshot = (snapshot: any): boolean => {
   if (Array.isArray(snapshot.landRecords)) setStoredData(STORAGE_KEYS.LAND_RECORDS, snapshot.landRecords);
   if (Array.isArray(snapshot.households)) setStoredData(STORAGE_KEYS.HOUSEHOLDS, snapshot.households);
   if (snapshot.povertyWeights) setStoredData(STORAGE_KEYS.POVERTY_WEIGHTS, snapshot.povertyWeights);
+  if (Array.isArray(snapshot.petitions)) setStoredData(STORAGE_KEYS.PETITIONS, snapshot.petitions);
   
   notifyCrossTabSync('DATABASE_RESTORED');
   return true;

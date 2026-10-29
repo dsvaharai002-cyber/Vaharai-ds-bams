@@ -20,13 +20,14 @@ import {
   recordDeletedId,
   savePregnantMothers,
 } from '../services/storage';
-import { downloadCsvFile, escapeCsv, getRelationshipTamilLabel } from '../services/csv';
+import { downloadCsvFile, escapeCsv, getRelationshipTamilLabel, generateHistoricalPregnantMothersSampleCsv, parsePregnantMothersFromCsv } from '../services/csv';
 import {
   Baby,
   Plus,
   Search,
   Filter,
   Download,
+  Upload,
   Printer,
   Calendar,
   CheckCircle2,
@@ -129,6 +130,62 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
 
   // Month Checklist Modal for a specific Mother
   const [checklistMother, setChecklistMother] = useState<PregnantMotherRecord | null>(null);
+
+  // 3-Year Completed History Upload State (Requirement 03)
+  const [showHistoryUploadModal, setShowHistoryUploadModal] = useState(false);
+  const [historyFileName, setHistoryFileName] = useState('');
+  const [historyCsvContent, setHistoryCsvContent] = useState('');
+  const [parsedHistoryMothers, setParsedHistoryMothers] = useState<PregnantMotherRecord[]>([]);
+  const [historyErrors, setHistoryErrors] = useState<string[]>([]);
+  const [historySuccessMsg, setHistorySuccessMsg] = useState('');
+
+  const handleDownloadHistorySample = () => {
+    const csv = generateHistoricalPregnantMothersSampleCsv();
+    downloadCsvFile(csv, 'vaharai_ds_pregnant_mothers_completed_3years_sample.csv');
+  };
+
+  const handleHistoryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setHistoryFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      setHistoryCsvContent(text);
+      const { pregnantMothers: parsed, errors } = parsePregnantMothersFromCsv(text, [], true);
+      setParsedHistoryMothers(parsed);
+      setHistoryErrors(errors);
+    };
+    reader.readAsText(file, 'UTF-8');
+  };
+
+  const handleCommitHistoryUpload = () => {
+    if (parsedHistoryMothers.length === 0) return;
+    const existingMap = new Map(pregnantMothers.map((m) => [m.nic, m]));
+    for (const m of parsedHistoryMothers) {
+      existingMap.set(m.nic, m);
+    }
+    const merged = Array.from(existingMap.values());
+    savePregnantMothers(merged);
+    onUpdatePregnantMothers(merged);
+    onAuditLog(
+      'IMPORT_HISTORICAL_PREGNANT_MOTHERS',
+      `Imported ${parsedHistoryMothers.length} past 3-year completed pregnant mother records by ${currentUser.name}`
+    );
+    setHistorySuccessMsg(
+      lang === 'ta'
+        ? `✅ ${parsedHistoryMothers.length} கடந்த 3 வருட நிறைவுற்ற தாய்மார் விபரங்கள் பத்துமாத நிறைவு பகுதியினுள் வெற்றிகரமாக சேர்க்கப்பட்டன!`
+        : `✅ ${parsedHistoryMothers.length} completed 3-year historical records imported into Completed Archive!`
+    );
+    setTimeout(() => {
+      setHistorySuccessMsg('');
+      setShowHistoryUploadModal(false);
+      setParsedHistoryMothers([]);
+      setHistoryFileName('');
+      setHistoryCsvContent('');
+      setActiveTab('COMPLETED');
+    }, 1800);
+  };
 
   // Form State for New Pregnant Mother Registration (Requirements 01, 02, 03)
   const [formName, setFormName] = useState('');
@@ -471,7 +528,16 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap no-print">
+          <button
+            type="button"
+            onClick={() => setShowHistoryUploadModal(true)}
+            className="px-3.5 py-2 text-xs font-bold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+            title={lang === 'ta' ? 'கடந்த 3 வருடங்களில் நிறைவுற்ற தாய்மார் பதிவுகளை CSV மூலம் அப்லோட் செய்' : 'Upload past 3-year completed mothers CSV'}
+          >
+            <Upload className="w-4 h-4" />
+            <span>{lang === 'ta' ? 'கடந்த 3 வருட நிறைவு CSV அப்லோட்' : 'Upload 3-Yr Completed CSV'}</span>
+          </button>
           <button
             onClick={handleExportCsv}
             className="px-3 py-2 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -586,8 +652,54 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
         </div>
       </div>
 
-      {/* Main Table View */}
-      <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
+      {/* Historical Upload Banner in Completed Tab */}
+      {activeTab === 'COMPLETED' && (
+        <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs no-print">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-100 rounded-xl text-emerald-800">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-emerald-950">
+                {lang === 'ta'
+                  ? 'கடந்த 3 வருடங்கள் (2023, 2024, 2025) நிறைவுற்ற தாய்மாரின் பழைய விபரங்கள்'
+                  : 'Past 3-Year Completed Mothers Archive'}
+              </h4>
+              <p className="text-[11px] text-emerald-800 mt-0.5">
+                {lang === 'ta'
+                  ? '10 மாதங்களும் முடிவடைந்த பழைய பயனாளிகளை ஒரே கிளிக்கில் CSV மூலமாக பத்துமாத நிறைவு பகுதியினுள் பதிவேற்றலாம்.'
+                  : 'Batch upload all 10-month completed historical records directly into this archive using CSV.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowHistoryUploadModal(true)}
+            className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+          >
+            <Upload className="w-4 h-4" />
+            <span>{lang === 'ta' ? 'பழைய விபரங்கள் CSV அப்லோட்' : 'Upload Completed CSV'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Main Table View & Printable Report Area */}
+      <div id="printable-report-area" className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
+        {/* Printable Official Header */}
+        <div className="hidden print:block p-4 border-b-2 border-slate-900 text-center mb-2">
+          <h2 className="text-base font-black text-slate-900 tracking-wide uppercase">
+            கோறளைப்பற்று வடக்கு - வாகரை பிரதேச செயலகம்
+          </h2>
+          <p className="text-xs font-bold text-slate-700">
+            Divisional Secretariat - Koralaipattu North (Vaharai) · போசணை முத்திரை மற்றும் கர்ப்பிணித் தாய்மார் விநியோக அறிக்கை
+          </p>
+          <div className="mt-2 flex items-center justify-between text-[10px] text-slate-600 font-mono border-t border-slate-300 pt-1">
+            <span>பகுதி: {activeTab === 'ACTIVE' ? 'நடப்பு விநியோகம் (Active)' : activeTab === 'WAITING' ? 'காத்திருப்பு (Waiting)' : '10 மாதங்கள் நிறைவுற்றவை (Completed)'}</span>
+            <span>அறிக்கை அச்சிட்ட திகதி: {new Date().toLocaleDateString('en-CA')}</span>
+            <span>அதிகாரி: {currentUser.name} ({currentUser.role})</span>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -598,7 +710,7 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
                 <th className="py-3 px-4">முத்திரை விபரம் (இலக்கம் & பெறுமதி)</th>
                 <th className="py-3 px-4">குழந்தை தவணை</th>
                 <th className="py-3 px-4">10 மாத பொருட்கள் பெறுதல் நிலை</th>
-                <th className="py-3 px-4 text-right">செயல்கள்</th>
+                <th className="py-3 px-4 text-right no-print">செயல்கள்</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -746,9 +858,9 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
 
       {/* Modal: Register New Pregnant Mother */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 my-8">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-5 sm:p-6 border border-slate-200 my-auto max-h-[calc(100vh-2.5rem)] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-2">
                 <Baby className="w-5 h-5 text-pink-700" />
                 <h3 className="text-sm font-bold text-slate-900">
@@ -777,12 +889,13 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
               </div>
             )}
 
-            <form onSubmit={handleSaveMother} className="mt-4 space-y-4 text-xs">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">
-                    தாயின் முழுப் பெயர் (Mother's Name) *
-                  </label>
+            <form onSubmit={handleSaveMother} className="mt-3 flex flex-col flex-1 overflow-hidden">
+              <div className="overflow-y-auto pr-1.5 space-y-4 text-xs flex-1 py-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      தாயின் முழுப் பெயர் (Mother's Name) *
+                    </label>
                   <input
                     type="text"
                     required
@@ -1059,108 +1172,112 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                 />
               </div>
+            </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold"
-                >
-                  {t.cancel}
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-pink-700 hover:bg-pink-800 text-white rounded-lg font-bold shadow-xs cursor-pointer"
-                >
-                  பதிவு செய்க
-                </button>
-              </div>
-            </form>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold cursor-pointer"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 bg-pink-700 hover:bg-pink-800 text-white rounded-lg font-bold shadow-xs cursor-pointer"
+              >
+                பதிவு செய்க
+              </button>
+            </div>
+          </form>
           </div>
         </div>
       )}
 
       {/* Modal: Assign Stamp Number */}
       {assigningStampMother && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
-            <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-2">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 border border-slate-200 my-auto max-h-[calc(100vh-2.5rem)] flex flex-col">
+            <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-2 shrink-0">
               <CreditCard className="w-5 h-5 text-amber-600" />
               <span>முத்திரை இலக்கம் ஒதுக்குதல் (Assign Stamp Number)</span>
             </h3>
 
-            <div className="mt-3 p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs">
-              <div className="font-bold text-amber-950">{assigningStampMother.name}</div>
-              <div className="font-mono text-amber-800 mt-0.5">NIC: {assigningStampMother.nic}</div>
-              <div className="text-[11px] text-amber-700 mt-0.5">
-                பிரிவு: {assigningStampMother.divisionCode} · பதிவு: {assigningStampMother.registrationDate}
+            <div className="overflow-y-auto pr-1 flex-1 py-2 space-y-3">
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs">
+                <div className="font-bold text-amber-950">{assigningStampMother.name}</div>
+                <div className="font-mono text-amber-800 mt-0.5">NIC: {assigningStampMother.nic}</div>
+                <div className="text-[11px] text-amber-700 mt-0.5">
+                  பிரிவு: {assigningStampMother.divisionCode} · பதிவு: {assigningStampMother.registrationDate}
+                </div>
               </div>
+
+              <form id="assign-stamp-form" onSubmit={handleSaveAssignedStamp} className="space-y-3.5 text-xs">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    முத்திரை வரிசை இலக்கம் (Stamp Number) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. STAMP-VHR-2026-081"
+                    value={stampInputNo}
+                    onChange={(e) => setStampInputNo(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-amber-600 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    வழங்கப்பட்ட திகதி
+                  </label>
+                  <input
+                    type="date"
+                    value={stampInputDate}
+                    onChange={(e) => setStampInputDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    முத்திரையின் பெறுமதி (LKR)
+                  </label>
+                  <input
+                    type="number"
+                    value={stampInputValue}
+                    onChange={(e) => setStampInputValue(Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono font-bold bg-white"
+                  />
+                </div>
+              </form>
             </div>
 
-            <form onSubmit={handleSaveAssignedStamp} className="mt-4 space-y-3.5 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  முத்திரை வரிசை இலக்கம் (Stamp Number) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. STAMP-VHR-2026-081"
-                  value={stampInputNo}
-                  onChange={(e) => setStampInputNo(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-amber-600 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  வழங்கப்பட்ட திகதி
-                </label>
-                <input
-                  type="date"
-                  value={stampInputDate}
-                  onChange={(e) => setStampInputDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  முத்திரையின் பெறுமதி (LKR)
-                </label>
-                <input
-                  type="number"
-                  value={stampInputValue}
-                  onChange={(e) => setStampInputValue(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono font-bold bg-white"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setAssigningStampMother(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold"
-                >
-                  {t.cancel}
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold shadow-xs cursor-pointer"
-                >
-                  முத்திரை ஒதுக்குக & ஆரம்பிக்க
-                </button>
-              </div>
-            </form>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 shrink-0">
+              <button
+                type="button"
+                onClick={() => setAssigningStampMother(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold cursor-pointer"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="submit"
+                form="assign-stamp-form"
+                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold shadow-xs cursor-pointer"
+              >
+                முத்திரை ஒதுக்குக & ஆரம்பிக்க
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* Modal: 10-Month Interactive Food Package Checklist */}
       {checklistMother && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 border border-slate-200 my-8">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-5 sm:p-6 border border-slate-200 my-auto max-h-[calc(100vh-2.5rem)] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <Baby className="w-5 h-5 text-pink-700" />
@@ -1170,12 +1287,12 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
                   {checklistMother.name} · NIC: <span className="font-mono font-semibold">{checklistMother.nic}</span> · முத்திரை: <span className="font-mono font-bold text-pink-700">#{checklistMother.stampNumber || 'Pending'}</span>
                 </p>
               </div>
-              <button onClick={() => setChecklistMother(null)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setChecklistMother(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="mt-4 space-y-4">
+            <div className="mt-4 space-y-4 overflow-y-auto pr-1 flex-1 py-1">
               {/* Progress Bar */}
               <div className="p-3 bg-pink-50 rounded-xl border border-pink-200">
                 <div className="flex items-center justify-between text-xs font-bold text-pink-900 mb-1.5">
@@ -1250,13 +1367,168 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
               )}
             </div>
 
-            <div className="flex justify-end pt-4 mt-4 border-t border-slate-100">
+            <div className="flex justify-end pt-3 mt-3 border-t border-slate-100 shrink-0">
               <button
                 type="button"
                 onClick={() => setChecklistMother(null)}
                 className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold cursor-pointer"
               >
                 மூடுக
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: 3-Year Completed History Upload Modal (Requirement 03) */}
+      {showHistoryUploadModal && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-5 sm:p-6 border border-slate-200 my-auto max-h-[calc(100vh-2.5rem)] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {lang === 'ta'
+                      ? 'கடந்த 3 வருட நிறைவுற்ற கர்ப்பிணித் தாய்மார் விபரங்கள் பதிவேற்றம்'
+                      : 'Upload Past 3-Year Completed Pregnant Mothers'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {lang === 'ta'
+                      ? '10 மாதங்களும் முடிவடைந்த பழைய பதிவுகள் நேரடியாக நிறைவு பகுதிக்கு சேர்க்கப்படும்'
+                      : 'Direct upload into 10-month completed archive with all vouchers marked collected'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowHistoryUploadModal(false);
+                  setParsedHistoryMothers([]);
+                  setHistoryFileName('');
+                  setHistoryErrors([]);
+                }}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto pr-1.5 space-y-4 text-xs flex-1 py-3">
+              {historySuccessMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl font-bold">
+                  {historySuccessMsg}
+                </div>
+              )}
+
+              {/* Sample CSV Download Section */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-800">மாதிரி CSV கோப்பினை பதிவிறக்குக</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    தலைப்புகள்: FamilyCode, Relationship, NIC, Name, DivisionCode, Phone, RegDate, StampNumber, StampValue
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadHistorySample}
+                  className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg font-bold text-xs flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>மாதிரி CSV</span>
+                </button>
+              </div>
+
+              {/* Upload Input */}
+              <div className="border-2 border-dashed border-emerald-300 bg-emerald-50/40 rounded-xl p-5 text-center">
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={handleHistoryFileChange}
+                  className="hidden"
+                  id="historical-csv-file-input"
+                />
+                <label
+                  htmlFor="historical-csv-file-input"
+                  className="cursor-pointer flex flex-col items-center justify-center gap-2"
+                >
+                  <FileSpreadsheet className="w-8 h-8 text-emerald-600" />
+                  <span className="font-bold text-emerald-950">
+                    {historyFileName || (lang === 'ta' ? 'கடந்த 3 வருட CSV கோப்பை தேர்ந்தெடுக்க கிளிக் செய்க' : 'Click to select CSV file')}
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    {lang === 'ta' ? 'இக்கோப்பிலுள்ள தாய்மார் அனைவரும் 10 மாதங்களும் பெற்று முடித்தவராக (Completed) சேமிக்கப்படுவர்' : 'All mothers in this file will be marked 100% completed'}
+                  </span>
+                </label>
+              </div>
+
+              {/* Parsing Errors */}
+              {historyErrors.length > 0 && (
+                <div className="p-3 bg-rose-50 border border-rose-300 text-rose-900 rounded-xl space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                    <span>பிழைகள் கண்டறியப்பட்டன ({historyErrors.length}):</span>
+                  </div>
+                  <ul className="list-disc pl-5 text-[11px] space-y-0.5 max-h-24 overflow-y-auto">
+                    {historyErrors.map((err, idx) => (
+                      <li key={idx}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Preview of Parsed Mothers */}
+              {parsedHistoryMothers.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between font-bold text-slate-800">
+                    <span>பதிவேற்றப்படவுள்ள தாய்மார் எண்ணிக்கை:</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-mono text-sm">
+                      {parsedHistoryMothers.length} நபர்கள்
+                    </span>
+                  </div>
+                  <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+                    {parsedHistoryMothers.slice(0, 10).map((m, idx) => (
+                      <div key={idx} className="p-2.5 flex items-center justify-between text-xs hover:bg-slate-50">
+                        <div>
+                          <div className="font-bold text-slate-900">{m.name}</div>
+                          <div className="text-[11px] font-mono text-slate-500">
+                            NIC: {m.nic} · பிரிவு: {m.divisionCode} · முத்திரை: #{m.stampNumber || 'N/A'}
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold">
+                          10/10 நிறைவு
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {parsedHistoryMothers.length > 10 && (
+                    <div className="text-center text-[11px] text-slate-500">
+                      மற்றும் {parsedHistoryMothers.length - 10} கூடுதல் பதிவுகள்...
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHistoryUploadModal(false);
+                  setParsedHistoryMothers([]);
+                  setHistoryFileName('');
+                }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold cursor-pointer"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                disabled={parsedHistoryMothers.length === 0}
+                onClick={handleCommitHistoryUpload}
+                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-lg font-bold shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>பத்துமாத நிறைவு பகுதியில் பதிவேற்றுக</span>
               </button>
             </div>
           </div>

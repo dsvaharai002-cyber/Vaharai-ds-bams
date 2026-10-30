@@ -509,7 +509,7 @@ export const generateDivisionsSampleCsv = (): string => {
     '211C,பனிச்சங்கேணி,PANICHCHANKERNI,V. Suresh,2310,580',
     '211D,வட்டவான்,VADDAVAAN,T. Karunakaran,1530,380',
     '211A,காயான்கேணி,KAYANKERNI,S. Pathmanathan,2600,650',
-    '212B,உரியன்கட்டு,UOORIYANKADDU,K. Raveendran,1390,350',
+    '212B,ஊரியன் கட்டு,UOORIYANKADDU,K. Raveendran,1390,350',
     '211E,மதுரங்கேணிக்குளம்,MATHURANKERNIKULAM,N. Loganathan,1180,290',
     '212,வாகரை மத்தி,VAHARAI CENTRAL,R. Tharmarajah,1920,480',
     '211F,கிரிமிச்சை,KIRIMICHCHI,R. Senthil,1720,430',
@@ -980,30 +980,25 @@ export const parsePregnantMothersFromCsv = (
     const stampValue = parseFloat((colIndex.stampValue !== -1 ? row[colIndex.stampValue] : '4500')?.trim() || '4500') || 4500;
     const notesRaw = (colIndex.notes !== -1 ? row[colIndex.notes] : '')?.trim() || '';
 
+    const expectedCompletionDate = calculateTenMonthsDate(regDate);
+    const todayStr = new Date().toISOString().slice(0, 10);
+
     const statusRaw = (colIndex.status !== -1 ? row[colIndex.status] : '')?.trim().toUpperCase() || '';
-    const isCompleted = forceCompleted || statusRaw.includes('COMPLET') || statusRaw.includes('முடிவ');
+    const isCompleted = forceCompleted || statusRaw.includes('COMPLET') || statusRaw.includes('முடிவ') || (expectedCompletionDate !== '' && expectedCompletionDate <= todayStr);
     const completedDate = isCompleted
-      ? normalizeDateString(colIndex.completedDate !== -1 ? row[colIndex.completedDate] : '') || calculateTenMonthsDate(regDate)
+      ? normalizeDateString(colIndex.completedDate !== -1 ? row[colIndex.completedDate] : '') || expectedCompletionDate
       : undefined;
 
     const welfareRaw = colIndex.welfare !== -1 ? row[colIndex.welfare] : '';
     let welfareSchemes = parseWelfareChecklistString(welfareRaw);
     if (!welfareSchemes.includes('PREGNANT_NUTRITION')) welfareSchemes.unshift('PREGNANT_NUTRITION');
 
-    const expectedCompletionDate = calculateTenMonthsDate(regDate);
-
-    // If completed (e.g. past 3-year historical batch), mark all 10 months collected
-    const monthlyCollections = createDefaultMonthlyCollections().map((col) => {
-      if (isCompleted) {
-        return {
-          ...col,
-          collected: true,
-          collectedDate: completedDate || expectedCompletionDate,
-          collectedByOfficer: 'வரலாற்றுப் பதிவு (Historical Record)',
-        };
-      }
-      return col;
-    });
+    // Generate accurate 10-month collections timeline anchored to the mother's actual registration date
+    const monthlyCollections = createDefaultMonthlyCollections(
+      regDate,
+      isCompleted,
+      'வரலாற்றுப் பதிவு (Historical Record)'
+    );
 
     const motherRecord: PregnantMotherRecord = {
       id: `MAT-${divisionCode}-${Date.now().toString().slice(-4)}-${i}`,
@@ -1461,8 +1456,8 @@ export const parseAssistanceFromCsv = (
     const familyCode = familyCodeRaw?.trim().toUpperCase() || '';
     const nic = nicRaw?.trim() || '';
     const divisionCode = divisionRaw?.trim() || '211';
-    const aidCategory = (batchInfo?.category || categoryRaw?.trim().toUpperCase() || 'DRY_RATIONS') as AidCategory;
-    const distributedDate = batchInfo?.date || dateRaw?.trim() || new Date().toISOString().slice(0, 10);
+    const rowDate = normalizeDateString(dateRaw?.trim());
+    const distributedDate = rowDate || (batchInfo?.date && batchInfo.date.trim()) || new Date().toISOString().slice(0, 10);
     
     // Auto-generate ID using batch ID if provided
     const id = batchInfo?.programBatchId
@@ -1477,16 +1472,44 @@ export const parseAssistanceFromCsv = (
     const beneficiaryName = nameRaw?.trim() || matchedBeneficiary?.nameTa || matchedBeneficiary?.nameEn || 'பயனாளி';
     const familyQrPayload = matchedBeneficiary?.familyQrPayload || generateUniqueFamilyQrPayload(familyCode, divisionCode);
 
+    // Map aidCategory
+    const rawCat = (categoryRaw || '').trim().toUpperCase();
+    let aidCategory: AidCategory = batchInfo?.category || 'OTHER';
+    if (!batchInfo?.category && rawCat) {
+      if (rawCat.includes('DRY') || rawCat.includes('RATION') || rawCat.includes('உணவு')) aidCategory = 'DRY_RATIONS';
+      else if (rawCat.includes('CASH') || rawCat.includes('GRANT') || rawCat.includes('பண')) aidCategory = 'CASH_GRANT';
+      else if (rawCat.includes('SEED') || rawCat.includes('AGRI') || rawCat.includes('விதை') || rawCat.includes('உரம்')) aidCategory = 'AGRICULTURE_SEEDS';
+      else if (rawCat.includes('FLOOD') || rawCat.includes('DISASTER') || rawCat.includes('அனர்த்த') || rawCat.includes('வெள்ள')) aidCategory = 'DISASTER_FLOOD';
+      else if (rawCat.includes('HOUS') || rawCat.includes('வீட்டு')) aidCategory = 'HOUSING_REPAIR';
+      else if (rawCat.includes('MEDIC') || rawCat.includes('மருத்துவ')) aidCategory = 'MEDICAL_ASSISTANCE';
+      else if (rawCat.includes('STATION') || rawCat.includes('EDU') || rawCat.includes('கல்வி')) aidCategory = 'EDUCATION_STATIONERY';
+      else if (rawCat.includes('LIVE') || rawCat.includes('TOOL') || rawCat.includes('வாழ்வாதார')) aidCategory = 'LIVELIHOOD_TOOL';
+      else if (
+        rawCat === 'DRY_RATIONS' ||
+        rawCat === 'CASH_GRANT' ||
+        rawCat === 'AGRICULTURE_SEEDS' ||
+        rawCat === 'DISASTER_FLOOD' ||
+        rawCat === 'HOUSING_REPAIR' ||
+        rawCat === 'MEDICAL_ASSISTANCE' ||
+        rawCat === 'EDUCATION_STATIONERY' ||
+        rawCat === 'LIVELIHOOD_TOOL' ||
+        rawCat === 'OTHER'
+      ) {
+        aidCategory = rawCat as AidCategory;
+      }
+    }
+
     // Apply batch program title if provided
     const aidDescription = batchInfo?.programTitle || descRaw?.trim() || 'அத்தியாவசிய உதவி / நிவாரண விநியோகம்';
     const donorOrOrganization = batchInfo?.donor || donorRaw?.trim() || 'பிரதேச செயலகம் வாகரை';
 
-    // Run Duplicate Prevention Engine on this row!
+    // Run Duplicate Prevention Engine on this row, checking against the actual distribution date!
     const duplicateCheck = checkDuplicateAssistance(
       familyCode,
       nic,
       aidCategory,
-      [...existingAssistance, ...validRecords]
+      [...existingAssistance, ...validRecords],
+      distributedDate
     );
 
     const record: AssistanceRecord = {

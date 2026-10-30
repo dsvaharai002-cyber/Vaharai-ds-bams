@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Beneficiary,
   User,
@@ -70,6 +70,7 @@ import {
   Trash2,
   CheckSquare,
   Square,
+  X,
 } from 'lucide-react';
 import { 
   createDatabaseSnapshot, 
@@ -140,7 +141,7 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
 
   // Assistance Program Batch Info State (Requirement 06)
   const [assistanceProgramTitle, setAssistanceProgramTitle] = useState<string>(
-    'வறட்சி / வெள்ள நிவாரண விநியோகம் 2026 (Flood & Drought Relief)'
+    'வறட்சி / வெள்ள நிவாரண விநியோகம் (Flood & Relief Distribution)'
   );
   const [assistanceBatchId, setAssistanceBatchId] = useState<string>(
     () => `AID-PRG-2026-${Math.floor(1000 + Math.random() * 9000)}`
@@ -152,7 +153,8 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
     () => new Date().toISOString().slice(0, 10)
   );
 
-  // Import State
+  // Import State & File Input Ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileContent, setFileContent] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
   const [parsedPreview, setParsedPreview] = useState<any[]>([]);
@@ -160,6 +162,18 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
   const [parsedDuplicates, setParsedDuplicates] = useState<AssistanceRecord[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [successBanner, setSuccessBanner] = useState<string>('');
+
+  const handleCancelPreview = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setParsedPreview([]);
+    setParsedDuplicates([]);
+    setParsedPregnantMothers([]);
+    setFileContent('');
+    setFileName('');
+    setParseErrors([]);
+  };
 
   // Family Tree Modal State
   const [selectedFamilyCodeForModal, setSelectedFamilyCodeForModal] = useState<string | null>(null);
@@ -660,11 +674,16 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
       );
     }
 
+    // Clear uploaded CSV completely from page after saving (Requirement 02)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     setParsedPreview([]);
     setParsedDuplicates([]);
     setParsedPregnantMothers([]);
     setFileContent('');
     setFileName('');
+    setParseErrors([]);
     setTimeout(() => setSuccessBanner(''), 6000);
 
     // Instant cloud synchronization push
@@ -945,15 +964,27 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
             {/* File Upload Selector */}
             <div className="flex items-center gap-3 flex-wrap">
               <input
+                ref={fileInputRef}
                 type="file"
                 accept=".csv,text/csv"
                 onChange={handleFileChange}
                 className="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200 cursor-pointer"
               />
               {fileName && (
-                <span className="text-xs text-slate-600 font-mono bg-slate-100 px-2.5 py-1 rounded-lg">
-                  📄 {fileName}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-600 font-mono bg-slate-100 px-2.5 py-1 rounded-lg">
+                    📄 {fileName}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCancelPreview}
+                    className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    title={lang === 'ta' ? 'கோப்பை ரத்து செய்' : 'Clear File'}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>{lang === 'ta' ? 'ரத்து' : 'Clear'}</span>
+                  </button>
+                </div>
               )}
             </div>
 
@@ -990,13 +1021,23 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
                   </p>
                 </div>
 
-                <button
-                  onClick={() => handleCommitImport(false)}
-                  className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{lang === 'ta' ? '✅ தரவுத்தளத்தில் இணைக்க (Commit Import)' : 'Commit Import to Database'}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCancelPreview}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <X className="w-4 h-4 text-slate-500" />
+                    <span>{lang === 'ta' ? 'ரத்து செய் (Dismiss)' : 'Dismiss Preview'}</span>
+                  </button>
+                  <button
+                    onClick={() => handleCommitImport(false)}
+                    className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{lang === 'ta' ? '✅ தரவுத்தளத்தில் இணைக்க (Commit Import)' : 'Commit Import to Database'}</span>
+                  </button>
+                </div>
               </div>
 
               {/* Preview Table */}
@@ -1153,9 +1194,18 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
 
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
+                    type="button"
+                    onClick={handleCancelPreview}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5 text-slate-500" />
+                    <span>{lang === 'ta' ? 'ரத்து செய் (Dismiss)' : 'Dismiss'}</span>
+                  </button>
+
+                  <button
                     onClick={() => handleCommitImport(false)}
                     disabled={parsedPreview.length === 0}
-                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
+                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     <span>
@@ -1168,7 +1218,7 @@ export const CsvManagementView: React.FC<CsvManagementViewProps> = ({
                   {parsedDuplicates.length > 0 && (
                     <button
                       onClick={() => handleCommitImport(true)}
-                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold transition-colors"
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                     >
                       {lang === 'ta' ? 'விதிவிலக்காக அனைத்தையும் பதிவேற்று' : 'Force Import All (Override)'}
                     </button>

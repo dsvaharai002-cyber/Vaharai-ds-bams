@@ -201,11 +201,23 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
   const [formStampValue, setFormStampValue] = useState(4500);
   const [formPregnancyNumber, setFormPregnancyNumber] = useState(1);
   const [formNotes, setFormNotes] = useState('');
+  const [formIsPastCompleted, setFormIsPastCompleted] = useState(false);
 
   // Auto-calculated expected completion date (10 months)
   const formExpectedCompletionDate = useMemo(() => {
     return calculateTenMonthsDate(formRegDate);
   }, [formRegDate]);
+
+  const handleRegDateChange = (dateVal: string) => {
+    setFormRegDate(dateVal);
+    const comp = calculateTenMonthsDate(dateVal);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (comp && comp <= todayStr) {
+      setFormIsPastCompleted(true);
+    } else {
+      setFormIsPastCompleted(false);
+    }
+  };
 
   // Duplicate Check in Form
   const duplicateActiveCheck = useMemo(() => {
@@ -249,6 +261,7 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
     setFormStampValue(4500);
     setFormPregnancyNumber(1);
     setFormNotes('');
+    setFormIsPastCompleted(false);
     setShowAddModal(true);
   };
 
@@ -259,8 +272,8 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
       return;
     }
 
-    // Safety validation for active duplicate
-    if (duplicateActiveCheck.isDuplicate) {
+    // Safety validation for active duplicate (only if not an already completed past record)
+    if (!formIsPastCompleted && duplicateActiveCheck.isDuplicate) {
       const confirmSave = window.confirm(
         lang === 'ta'
           ? `⚠️ எச்சரிக்கை: இந்த தாய் (${formNic}) ஏற்கனவே ஒரு முத்திரை திட்டத்தில் உள்ளார். 10 மாதங்கள் முடியவில்லை. எனினும் புதிய பதிவாக தொடரவா?`
@@ -272,7 +285,7 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
     const cleanNic = formNic.trim().toUpperCase();
     const cleanStampNo = formStampNo.trim();
     const hasStamp = !!cleanStampNo;
-    const initialStatus = hasStamp ? 'ACTIVE_COLLECTING' : 'WAITING_STAMP';
+    const initialStatus = formIsPastCompleted ? 'COMPLETED' : hasStamp ? 'ACTIVE_COLLECTING' : 'WAITING_STAMP';
     const famCode = formFamilyCode.trim() || `FAM-${formDivision}-001`;
 
     const newRecord: PregnantMotherRecord = {
@@ -286,12 +299,13 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
       phone: formPhone.trim(),
       registrationDate: formRegDate,
       expectedCompletionDate: formExpectedCompletionDate,
+      completedDate: formIsPastCompleted ? formExpectedCompletionDate : undefined,
       stampIssueDate: hasStamp ? (formStampDate || formRegDate) : undefined,
       stampNumber: cleanStampNo || undefined,
       stampValue: Number(formStampValue) || 4500,
       pregnancyNumber: Number(formPregnancyNumber) || 1,
-      monthlyCollections: createDefaultMonthlyCollections(),
-      isCompleted: false,
+      monthlyCollections: createDefaultMonthlyCollections(formRegDate, formIsPastCompleted, currentUser.name),
+      isCompleted: formIsPastCompleted,
       status: initialStatus,
       notes: formNotes.trim(),
       createdAt: new Date().toISOString(),
@@ -1074,7 +1088,7 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
                     <input
                       type="date"
                       value={formRegDate}
-                      onChange={(e) => setFormRegDate(e.target.value)}
+                      onChange={(e) => handleRegDateChange(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono bg-white"
                     />
                   </div>
@@ -1091,6 +1105,20 @@ export const PregnantMothersView: React.FC<PregnantMothersViewProps> = ({
                     />
                   </div>
                 </div>
+
+                <label className="flex items-center gap-2 p-2.5 bg-white/90 rounded-lg border border-pink-200 cursor-pointer mt-1">
+                  <input
+                    type="checkbox"
+                    checked={formIsPastCompleted}
+                    onChange={(e) => setFormIsPastCompleted(e.target.checked)}
+                    className="rounded text-pink-700 focus:ring-pink-600"
+                  />
+                  <span className="text-xs font-bold text-pink-950">
+                    {lang === 'ta'
+                      ? '✓ கடந்த காலத்தில் 10 மாதங்களும் வழங்கப்பட்டு நிறைவடைந்த வரலாற்றுப் பதிவு'
+                      : '✓ Mark all 10 past monthly vouchers as completed (Historical Record)'}
+                  </span>
+                </label>
               </div>
 
               {/* Parity Tracking: 01, 02, 03, 04 Child */}

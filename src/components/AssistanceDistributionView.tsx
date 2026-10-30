@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { AssistanceRecord, Beneficiary, User, GNDivision, AidCategory, DuplicateAidCheckResult } from '../types';
 import { Language, translations } from '../translations/i18n';
 import {
@@ -36,6 +36,7 @@ import {
   ExternalLink,
   Trash2,
   Edit2,
+  X,
 } from 'lucide-react';
 
 interface AssistanceDistributionViewProps {
@@ -91,7 +92,8 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
   const [authPasswordError, setAuthPasswordError] = useState('');
   const [pendingDuplicateAction, setPendingDuplicateAction] = useState<'single' | 'csv-force' | null>(null);
 
-  // CSV Upload State
+  // CSV Upload State & File Input Ref
+  const csvFileInputRef = useRef<HTMLInputElement>(null);
   const [csvMode, setCsvMode] = useState<'assistance' | 'families'>('assistance');
   const [csvFileName, setCsvFileName] = useState('');
   const [csvRawText, setCsvRawText] = useState('');
@@ -101,11 +103,63 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const [csvSuccessMessage, setCsvSuccessMessage] = useState('');
 
-  // History Filter State
+  const handleCancelCsv = () => {
+    if (csvFileInputRef.current) {
+      csvFileInputRef.current.value = '';
+    }
+    setParsedValidAid([]);
+    setParsedDuplicateAid([]);
+    setParsedFamilies([]);
+    setCsvRawText('');
+    setCsvFileName('');
+    setCsvErrors([]);
+  };
+
+  // History Filter State: Search, Division, Category, Duplicates, and Frequency of Aid (1, 2, 3, 4, 5, பல)
   const [historySearch, setHistorySearch] = useState('');
   const [filterDivision, setFilterDivision] = useState('ALL');
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false);
+  const [filterAidCount, setFilterAidCount] = useState<string>('ALL'); // 'ALL' | '1' | '2' | '3' | '4' | '5' | 'MULTIPLE' | '5_PLUS'
+
+  // Aid frequency map: familyCode / NIC -> total assistance count across database
+  const aidFrequencyMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of assistanceRecords) {
+      const famKey = (r.familyCode || '').trim().toUpperCase();
+      const nicKey = (r.beneficiaryNic || '').trim().toUpperCase();
+      if (famKey) map.set(famKey, (map.get(famKey) || 0) + 1);
+      if (nicKey && nicKey !== famKey) map.set(nicKey, (map.get(nicKey) || 0) + 1);
+    }
+    return map;
+  }, [assistanceRecords]);
+
+  // Aid frequency count metrics for filter pill badges
+  const frequencyStats = useMemo(() => {
+    let exactly1 = 0;
+    let exactly2 = 0;
+    let exactly3 = 0;
+    let exactly4 = 0;
+    let exactly5 = 0;
+    let multiple = 0;
+    let fivePlus = 0;
+
+    for (const rec of assistanceRecords) {
+      const famKey = (rec.familyCode || '').trim().toUpperCase();
+      const nicKey = (rec.beneficiaryNic || '').trim().toUpperCase();
+      const count = (famKey ? aidFrequencyMap.get(famKey) : undefined) || (nicKey ? aidFrequencyMap.get(nicKey) : undefined) || 1;
+
+      if (count === 1) exactly1++;
+      if (count === 2) exactly2++;
+      if (count === 3) exactly3++;
+      if (count === 4) exactly4++;
+      if (count === 5) exactly5++;
+      if (count >= 2) multiple++;
+      if (count >= 5) fivePlus++;
+    }
+
+    return { exactly1, exactly2, exactly3, exactly4, exactly5, multiple, fivePlus };
+  }, [assistanceRecords, aidFrequencyMap]);
 
   // Super Admin Edit & Delete State
   const [selectedRecordForEdit, setSelectedRecordForEdit] = useState<AssistanceRecord | null>(null);
@@ -219,7 +273,8 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
         selectedFamily.familyCode,
         selectedFamily.head?.nic,
         cat,
-        assistanceRecords
+        assistanceRecords,
+        distributedDate
       );
       setDuplicateCheck(check);
     }
@@ -264,12 +319,13 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
       const head = members.find((m) => m.familyHead || m.familyRelationship === 'HEAD') || members[0];
       setSelectedFamily({ familyCode: targetFamilyCode, members, head });
 
-      // Run Duplicate Aid Check!
+      // Run Duplicate Aid Check against the distributedDate!
       const check = checkDuplicateAssistance(
         targetFamilyCode,
         head?.nic,
         aidCategory,
-        assistanceRecords
+        assistanceRecords,
+        distributedDate
       );
       setDuplicateCheck(check);
     } else {
@@ -374,10 +430,14 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
         ? `⚠️ கடவுச்சொல் அங்கீகாரத்துடன் மொத்தம் ${allToImport.length} பதிவுகளும் வெற்றிகரமாக பதிவேற்றப்பட்டன!`
         : `⚠️ Force imported all ${allToImport.length} records with password authorization!`
     );
+    if (csvFileInputRef.current) {
+      csvFileInputRef.current.value = '';
+    }
     setParsedValidAid([]);
     setParsedDuplicateAid([]);
     setCsvRawText('');
     setCsvFileName('');
+    setCsvErrors([]);
     setTimeout(() => setCsvSuccessMessage(''), 6000);
   };
 
@@ -484,11 +544,15 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
       );
     }
 
+    if (csvFileInputRef.current) {
+      csvFileInputRef.current.value = '';
+    }
     setParsedValidAid([]);
     setParsedDuplicateAid([]);
     setParsedFamilies([]);
     setCsvRawText('');
     setCsvFileName('');
+    setCsvErrors([]);
     setTimeout(() => setCsvSuccessMessage(''), 6000);
   };
 
@@ -506,12 +570,27 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
     }
   };
 
-  // Filtered History Records
+  // Filtered History Records with Frequency / Times Received Filter
   const filteredHistory = useMemo(() => {
     return assistanceRecords.filter((rec) => {
       if (filterDivision !== 'ALL' && rec.divisionCode !== filterDivision) return false;
       if (filterCategory !== 'ALL' && rec.aidCategory !== filterCategory) return false;
       if (showDuplicatesOnly && !rec.isDuplicate) return false;
+
+      // Frequency of aid received filter (1 முறை, 2 முறை, 3, 4, 5, பல)
+      if (filterAidCount !== 'ALL') {
+        const famKey = (rec.familyCode || '').trim().toUpperCase();
+        const nicKey = (rec.beneficiaryNic || '').trim().toUpperCase();
+        const count = (famKey ? aidFrequencyMap.get(famKey) : undefined) || (nicKey ? aidFrequencyMap.get(nicKey) : undefined) || 1;
+
+        if (filterAidCount === '1' && count !== 1) return false;
+        if (filterAidCount === '2' && count !== 2) return false;
+        if (filterAidCount === '3' && count !== 3) return false;
+        if (filterAidCount === '4' && count !== 4) return false;
+        if (filterAidCount === '5' && count !== 5) return false;
+        if (filterAidCount === 'MULTIPLE' && count < 2) return false;
+        if (filterAidCount === '5_PLUS' && count < 5) return false;
+      }
 
       if (historySearch.trim()) {
         const q = historySearch.toLowerCase().trim();
@@ -524,7 +603,7 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
       }
       return true;
     });
-  }, [assistanceRecords, filterDivision, filterCategory, showDuplicatesOnly, historySearch]);
+  }, [assistanceRecords, filterDivision, filterCategory, showDuplicatesOnly, filterAidCount, aidFrequencyMap, historySearch]);
 
   return (
     <div className="space-y-6 w-full max-w-full overflow-x-hidden">
@@ -916,7 +995,20 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
                       <input
                         type="date"
                         value={distributedDate}
-                        onChange={(e) => setDistributedDate(e.target.value)}
+                        onChange={(e) => {
+                          const newDate = e.target.value;
+                          setDistributedDate(newDate);
+                          if (selectedFamily) {
+                            const check = checkDuplicateAssistance(
+                              selectedFamily.familyCode,
+                              selectedFamily.head?.nic,
+                              aidCategory,
+                              assistanceRecords,
+                              newDate
+                            );
+                            setDuplicateCheck(check);
+                          }
+                        }}
                         required
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-600 text-xs font-mono"
                       />
@@ -1050,17 +1142,27 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
               {lang === 'ta' ? 'நிரப்பப்பட்ட CSV கோப்பைத் தேர்ந்தெடுக்கவும் (Choose CSV File):' : 'Select completed CSV file:'}
             </label>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <input
+                ref={csvFileInputRef}
                 type="file"
                 accept=".csv,text/csv"
                 onChange={handleFileChange}
                 className="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100 cursor-pointer"
               />
               {csvFileName && (
-                <span className="text-xs text-slate-500 font-mono">
-                  {csvFileName}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 font-mono">
+                    {csvFileName}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCancelCsv}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    ✕ {lang === 'ta' ? 'நீக்கு (Cancel)' : 'Clear'}
+                  </button>
+                </div>
               )}
             </div>
 
@@ -1125,6 +1227,13 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
                       {lang === 'ta' ? 'விதிவிலக்காக அனைத்தையும் பதிவேற்று' : 'Force Import All (Override)'}
                     </button>
                   )}
+
+                  <button
+                    onClick={handleCancelCsv}
+                    className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-semibold transition-colors"
+                  >
+                    ✕ {lang === 'ta' ? 'முன்னோட்டத்தை ரத்து செய்' : 'Cancel'}
+                  </button>
                 </div>
               </div>
 
@@ -1235,12 +1344,20 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
                   </div>
                 </div>
 
-                <button
-                  onClick={handleCommitEligibleOnly}
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
-                >
-                  {lang === 'ta' ? '✅ குடும்பங்களை தரவுத்தளத்தில் இணை' : 'Commit Families to Database'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCommitEligibleOnly}
+                    className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+                  >
+                    {lang === 'ta' ? '✅ குடும்பங்களை தரவுத்தளத்தில் இணை' : 'Commit Families to Database'}
+                  </button>
+                  <button
+                    onClick={handleCancelCsv}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
+                  >
+                    ✕ {lang === 'ta' ? 'ரத்து செய்' : 'Cancel'}
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto bg-white rounded-2xl border border-slate-200 shadow-xs">
@@ -1380,6 +1497,50 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
                 </button>
               </div>
             </div>
+
+            {/* Frequency of Aid Received Filter Buttons (1 முறை, 2 முறை, 3, 4, 5, பல) */}
+            <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] font-bold text-slate-600 mr-1 flex items-center gap-1">
+                <span>🎯</span>
+                <span>{lang === 'ta' ? 'உதவி பெற்ற தடவைகள்:' : 'Times Aid Received:'}</span>
+              </span>
+
+              {[
+                { key: 'ALL', labelTa: 'அனைத்தும்', labelEn: 'All', count: assistanceRecords.length },
+                { key: '1', labelTa: '1 முறை மட்டும்', labelEn: '1 Time Only', count: frequencyStats.exactly1 },
+                { key: '2', labelTa: '2 முறை', labelEn: '2 Times', count: frequencyStats.exactly2 },
+                { key: '3', labelTa: '3 முறை', labelEn: '3 Times', count: frequencyStats.exactly3 },
+                { key: '4', labelTa: '4 முறை', labelEn: '4 Times', count: frequencyStats.exactly4 },
+                { key: '5', labelTa: '5 முறை', labelEn: '5 Times', count: frequencyStats.exactly5 },
+                { key: 'MULTIPLE', labelTa: 'பல முறை (2+)', labelEn: 'Multiple (2+)', count: frequencyStats.multiple },
+                { key: '5_PLUS', labelTa: '5+ முறை', labelEn: '5+ Times', count: frequencyStats.fivePlus },
+              ].map((pill) => {
+                const isActive = filterAidCount === pill.key;
+                return (
+                  <button
+                    key={pill.key}
+                    type="button"
+                    onClick={() => setFilterAidCount(pill.key)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      isActive
+                        ? pill.key === '5_PLUS' || pill.key === 'MULTIPLE'
+                          ? 'bg-rose-700 text-white shadow-xs'
+                          : 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                    }`}
+                  >
+                    <span>{lang === 'ta' ? pill.labelTa : pill.labelEn}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                        isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-800'
+                      }`}
+                    >
+                      {pill.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Table & Printable Report Area */}
@@ -1410,6 +1571,7 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
                   <th className="p-3">வழங்கும் நிறுவனம்</th>
                   <th className="p-3">திகதி</th>
                   <th className="p-3">அலுவலர்</th>
+                  <th className="p-3">உதவி எண்ணிக்கை</th>
                   <th className="p-3">நிலை</th>
                   <th className="p-3 text-right no-print">நடவடிக்கை</th>
                 </tr>
@@ -1417,12 +1579,17 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
               <tbody className="divide-y divide-slate-100">
                 {filteredHistory.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="p-8 text-center text-slate-400">
+                    <td colSpan={12} className="p-8 text-center text-slate-400">
                       {lang === 'ta' ? 'உதவிப் பதிவுகள் எதுவும் கிடைக்கவில்லை.' : 'No assistance records found.'}
                     </td>
                   </tr>
                 ) : (
-                  filteredHistory.map((rec) => (
+                  filteredHistory.map((rec) => {
+                    const famKey = (rec.familyCode || '').trim().toUpperCase();
+                    const nicKey = (rec.beneficiaryNic || '').trim().toUpperCase();
+                    const aidCount = (famKey ? aidFrequencyMap.get(famKey) : undefined) || (nicKey ? aidFrequencyMap.get(nicKey) : undefined) || 1;
+
+                    return (
                     <tr
                       key={rec.id}
                       className={`hover:bg-slate-50 ${rec.isDuplicate ? 'bg-red-50/40' : ''}`}
@@ -1451,6 +1618,27 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
                       <td className="p-3 text-slate-600">{rec.donorOrOrganization}</td>
                       <td className="p-3 font-mono text-slate-600">{rec.distributedDate}</td>
                       <td className="p-3 text-slate-700 font-medium">{rec.officerName}</td>
+                      <td className="p-3 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+                            aidCount === 1
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : aidCount === 2
+                              ? 'bg-blue-50 text-blue-800 border-blue-200'
+                              : aidCount === 3
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : aidCount === 4
+                              ? 'bg-orange-50 text-orange-800 border-orange-200'
+                              : 'bg-red-50 text-red-800 border-red-300 font-black'
+                          }`}
+                        >
+                          {aidCount === 1 && (lang === 'ta' ? '🟢 1 முறை' : '🟢 1st Time')}
+                          {aidCount === 2 && (lang === 'ta' ? '🔵 2 முறை' : '🔵 2nd Time')}
+                          {aidCount === 3 && (lang === 'ta' ? '🟠 3 முறை' : '🟠 3rd Time')}
+                          {aidCount === 4 && (lang === 'ta' ? '🔶 4 முறை' : '🔶 4th Time')}
+                          {aidCount >= 5 && (lang === 'ta' ? `⚠️ ${aidCount} முறை (பல)` : `⚠️ ${aidCount} Times (Frequent)`)}
+                        </span>
+                      </td>
                       <td className="p-3">
                         {rec.isDuplicate ? (
                           <span className="px-2 py-0.5 bg-red-100 text-red-800 font-bold text-[9px] rounded-full border border-red-200">
@@ -1487,8 +1675,9 @@ export const AssistanceDistributionView: React.FC<AssistanceDistributionViewProp
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
+                  );
+                })
+              )}
               </tbody>
             </table>
           </div>

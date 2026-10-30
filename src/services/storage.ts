@@ -27,7 +27,7 @@ const STORAGE_KEYS = {
   USERS: 'vaharai_ds_users_v6',
   BENEFICIARIES: 'vaharai_ds_beneficiaries_v6',
   TOKENS: 'vaharai_ds_tokens_v6',
-  DIVISIONS: 'vaharai_ds_divisions_v7',
+  DIVISIONS: 'vaharai_ds_divisions_v8',
   AUDIT_LOGS: 'vaharai_ds_audit_logs_v6',
   ASSISTANCE: 'vaharai_ds_assistance_v6',
   SERVICES: 'vaharai_ds_services_v6',
@@ -200,7 +200,7 @@ export const DEFAULT_DIVISIONS: GNDivision[] = ((initialDatabaseSeed as any)?.di
   { code: '211C', nameEn: 'Panichchankerni', nameTa: 'பனிச்சங்கேணி', gnOfficerName: '', population: 2310, households: 580 },
   { code: '211D', nameEn: 'Vaddavaan', nameTa: 'வட்டவான்', gnOfficerName: '', population: 1530, households: 380 },
   { code: '211A', nameEn: 'Kayankerni', nameTa: 'காயான்கேணி', gnOfficerName: '', population: 2600, households: 650 },
-  { code: '212B', nameEn: 'Uooriyankaddu ', nameTa: 'உரியன்கட்டு', gnOfficerName: '', population: 1390, households: 350 },
+  { code: '212B', nameEn: 'Uooriyankaddu', nameTa: 'ஊரியன் கட்டு', gnOfficerName: '', population: 1390, households: 350 },
   { code: '211E', nameEn: 'Mathurankernikulam', nameTa: 'மதுரங்கேணிக்குளம்', gnOfficerName: '', population: 1180, households: 290 },
   { code: '212', nameEn: 'Vaharai Central', nameTa: 'வாகரை மத்தி', gnOfficerName: '', population: 1920, households: 480 },
   { code: '211F', nameEn: 'Kirimichchi', nameTa: 'கிரிமிச்சை', gnOfficerName: '', population: 1720, households: 430 },
@@ -224,8 +224,7 @@ export const getDivisionByCode = (code: string, divisions: GNDivision[] = DEFAUL
   }
   return (
     divisions.find((d) => d.code.toUpperCase() === clean) ||
-    (clean === '212B' ? divisions.find((d) => d.nameEn.includes('Uooriyankaddu') || d.code === '213B') : undefined) ||
-    (clean === '212B' ? divisions.find((d) => d.code === '212B') : undefined) ||
+    (clean === '212B' ? divisions.find((d) => d.nameEn.toLowerCase().includes('oooriyankaddu') || d.code === '212B') : undefined) ||
     divisions.find((d) => d.nameEn.toUpperCase().includes(clean) || d.nameTa.includes(clean))
   );
 };
@@ -539,13 +538,32 @@ export const calculateTenMonthsDate = (startDateStr: string): string => {
   return date.toISOString().slice(0, 10);
 };
 
-export const createDefaultMonthlyCollections = (): MonthlyStampCollection[] => {
-  return Array.from({ length: 10 }, (_, i) => ({
-    monthIndex: i + 1,
-    monthLabelTa: `மாதம் ${String(i + 1).padStart(2, '0')}`,
-    monthLabelEn: `Month ${String(i + 1).padStart(2, '0')}`,
-    collected: false,
-  }));
+export const createDefaultMonthlyCollections = (
+  startDateStr?: string,
+  markAllCollected: boolean = false,
+  officerName?: string
+): MonthlyStampCollection[] => {
+  const baseDate = startDateStr ? new Date(startDateStr) : new Date();
+  const validBase = isNaN(baseDate.getTime()) ? new Date() : baseDate;
+
+  return Array.from({ length: 10 }, (_, i) => {
+    const d = new Date(validBase);
+    d.setMonth(d.getMonth() + i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const monthKey = `${y}-${m}`;
+    const day = String(Math.min(validBase.getDate(), 28)).padStart(2, '0');
+    const collectDateStr = `${y}-${m}-${day}`;
+
+    return {
+      monthIndex: i + 1,
+      monthLabelTa: `மாதம் ${String(i + 1).padStart(2, '0')} (${monthKey})`,
+      monthLabelEn: `Month ${String(i + 1).padStart(2, '0')} (${monthKey})`,
+      collected: markAllCollected,
+      collectedDate: markAllCollected ? collectDateStr : undefined,
+      collectedByOfficer: markAllCollected ? (officerName || 'வரலாற்றுப் பதிவு (Historical Record)') : undefined,
+    };
+  });
 };
 
 export const loadPregnantMothers = (): PregnantMotherRecord[] => {
@@ -1097,11 +1115,23 @@ export const loadDivisions = (): GNDivision[] => {
   const storedCodes = new Set(stored.map((d) => d.code));
   // If stored has obsolete divisions (e.g. 215, 214) or does not match 16 divisions, reset to DEFAULT_DIVISIONS
   const hasObsolete = storedCodes.has('215') || storedCodes.has('214') || storedCodes.has('215A') || storedCodes.has('215B');
-  if (hasObsolete || stored.length !== 16 || !storedCodes.has('213D') || !storedCodes.has('211G')) {
+  if (hasObsolete || stored.length !== 16 || !storedCodes.has('213D') || !storedCodes.has('211G') || !storedCodes.has('212B')) {
     setStoredData(STORAGE_KEYS.DIVISIONS, DEFAULT_DIVISIONS);
     return DEFAULT_DIVISIONS;
   }
-  return stored;
+  // Ensure Uooriyankaddu is correctly code 212B and ஊரியன் கட்டு
+  const normalized = stored.map((d) => {
+    if (d.code === '212B' || d.nameEn.toLowerCase().includes('oooriyankaddu') || d.nameTa.includes('ஊரியன்') || d.nameTa.includes('உரியன்')) {
+      return {
+        ...d,
+        code: '212B',
+        nameEn: 'Uooriyankaddu',
+        nameTa: 'ஊரியன் கட்டு',
+      };
+    }
+    return d;
+  });
+  return normalized;
 };
 export const saveDivisions = (divs: GNDivision[]) => {
   setStoredData(STORAGE_KEYS.DIVISIONS, divs);
@@ -1205,7 +1235,8 @@ export const checkDuplicateAssistance = (
   familyCode?: string,
   nic?: string,
   category?: string,
-  currentRecords?: AssistanceRecord[]
+  currentRecords?: AssistanceRecord[],
+  currentDistributedDate?: string
 ): DuplicateAidCheckResult => {
   const records = currentRecords && currentRecords.length > 0 ? currentRecords : loadAssistanceRecords();
   
@@ -1233,9 +1264,17 @@ export const checkDuplicateAssistance = (
   matchingRecords.sort((a, b) => new Date(b.distributedDate).getTime() - new Date(a.distributedDate).getTime());
   const lastRecord = matchingRecords[0];
   const lastTime = new Date(lastRecord.distributedDate).getTime();
-  const daysDiff = Math.floor((Date.now() - lastTime) / (1000 * 60 * 60 * 24));
+  
+  // If recording historical aid on a past date, calculate days difference relative to that date
+  const targetTime = currentDistributedDate ? new Date(currentDistributedDate).getTime() : Date.now();
+  const daysDiff = Math.abs(Math.floor((targetTime - lastTime) / (1000 * 60 * 60 * 24)));
 
-  const sameCategoryMatch = category ? matchingRecords.find((r) => r.aidCategory === category) : null;
+  // Same category match on the exact same date or within 30 days
+  const sameCategoryMatch = category ? matchingRecords.find((r) => {
+    if (r.aidCategory !== category) return false;
+    const diff = Math.abs(Math.floor((targetTime - new Date(r.distributedDate).getTime()) / (1000 * 60 * 60 * 24)));
+    return diff < 30;
+  }) : null;
 
   let severity: 'SAFE' | 'WARNING' | 'CRITICAL' = 'SAFE';
   let warningMessageTa = '';
@@ -1243,16 +1282,16 @@ export const checkDuplicateAssistance = (
 
   if (daysDiff < 30 || sameCategoryMatch) {
     severity = 'CRITICAL';
-    warningMessageTa = `⚠️ கடுமையான எச்சரிக்கை: இக்குடும்பத்திற்கு ${daysDiff} நாட்களுக்கு முன்னர் (${lastRecord.distributedDate}) ஏற்கனவே உதவி (${lastRecord.aidDescription} - ${lastRecord.amountOrValue}) வழங்கப்பட்டுள்ளது! தொடர்ச்சியான இரட்டை உதவிகளைத் தவிர்க்கவும்!`;
-    warningMessageEn = `CRITICAL WARNING: This family already received assistance (${lastRecord.aidDescription}) ${daysDiff} days ago on ${lastRecord.distributedDate}. Continuous aid duplication risk!`;
+    warningMessageTa = `⚠️ கடுமையான எச்சரிக்கை: இக்குடும்பத்திற்கு குறித்த திகதிக்கு அண்மித்து (${lastRecord.distributedDate}) ஏற்கனவே உதவி (${lastRecord.aidDescription} - ${lastRecord.amountOrValue}) வழங்கப்பட்டுள்ளது! தொடர்ச்சியான இரட்டை உதவிகளைத் தவிர்க்கவும்!`;
+    warningMessageEn = `CRITICAL WARNING: This family already received assistance (${lastRecord.aidDescription}) near this date (${lastRecord.distributedDate}). Continuous aid duplication risk!`;
   } else if (daysDiff < 90) {
     severity = 'WARNING';
-    warningMessageTa = `கவனிக்க: இக்குடும்பம் ${daysDiff} நாட்களுக்கு முன் (${lastRecord.distributedDate}) உதவி பெற்றுள்ளது. மொத்தம் ${matchingRecords.length} முறை உதவி பெறப்பட்டுள்ளது.`;
-    warningMessageEn = `Notice: This family received relief ${daysDiff} days ago (${lastRecord.distributedDate}). Total past assistances: ${matchingRecords.length}.`;
+    warningMessageTa = `கவனிக்க: இக்குடும்பம் ${daysDiff} நாட்களுக்கு இடைவெளியில் (${lastRecord.distributedDate}) உதவி பெற்றுள்ளது. மொத்தம் ${matchingRecords.length} முறை உதவி பெறப்பட்டுள்ளது.`;
+    warningMessageEn = `Notice: This family received relief ${daysDiff} days apart (${lastRecord.distributedDate}). Total past assistances: ${matchingRecords.length}.`;
   } else {
     severity = 'SAFE';
-    warningMessageTa = `இக்குடும்பம் கடைசியாக ${daysDiff} நாட்களுக்கு முன் உதவி பெற்றுள்ளது. புதிய உதவி வழங்க அனுமதிக்கலாம்.`;
-    warningMessageEn = `Last assistance was ${daysDiff} days ago. Can be considered for new relief.`;
+    warningMessageTa = `இக்குடும்பம் கடைசியாக ${daysDiff} நாட்களுக்கு இடைவெளியில் உதவி பெற்றுள்ளது. புதிய உதவி வழங்க அனுமதிக்கலாம்.`;
+    warningMessageEn = `Last assistance was ${daysDiff} days apart. Can be considered for new relief.`;
   }
 
   return {

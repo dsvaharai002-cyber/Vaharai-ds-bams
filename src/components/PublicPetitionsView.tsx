@@ -29,8 +29,12 @@ import {
   ArrowRight,
   Send,
   Building,
+  Camera,
+  Sparkles,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { savePetitions, recordDeletedId } from '../services/storage';
+import { PetitionLetterScannerModal, ScannedPetitionData } from './PetitionLetterScannerModal';
 
 interface PublicPetitionsViewProps {
   petitions: PublicPetition[];
@@ -96,8 +100,10 @@ export const PublicPetitionsView: React.FC<PublicPetitionsViewProps> = ({
 
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showScannerModal, setShowScannerModal] = useState(false);
   const [selectedPetitionForAction, setSelectedPetitionForAction] = useState<PublicPetition | null>(null);
   const [printingPetition, setPrintingPetition] = useState<PublicPetition | null>(null);
+  const [viewingLetterPhoto, setViewingLetterPhoto] = useState<string | null>(null);
 
   // Form State for New Request / Complaint
   const [formType, setFormType] = useState<PetitionType>('REQUEST');
@@ -113,6 +119,28 @@ export const PublicPetitionsView: React.FC<PublicPetitionsViewProps> = ({
   const [formSubject, setFormSubject] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formTokenNo, setFormTokenNo] = useState('');
+  const [scannedLetterPreview, setScannedLetterPreview] = useState<string | null>(null);
+
+  // Handler for applying OCR extracted data from scanned letter
+  const handleApplyScannedData = (data: ScannedPetitionData) => {
+    if (data.citizenName) setFormName(data.citizenName);
+    if (data.citizenNic) setFormNic(data.citizenNic);
+    if (data.phone) setFormPhone(data.phone);
+    if (data.address) setFormAddress(data.address);
+    if (data.divisionCode) setFormDivision(data.divisionCode);
+    if (data.targetDepartment) setFormDept(data.targetDepartment);
+    if (data.requestType) setFormType(data.requestType);
+    if (data.priority) setFormPriority(data.priority);
+    if (data.subject) setFormSubject(data.subject);
+    if (data.description) setFormDescription(data.description);
+    if (data.tokenNumber) setFormTokenNo(data.tokenNumber);
+    if (data.letterPhotoUrl) setScannedLetterPreview(data.letterPhotoUrl);
+    setShowAddModal(true);
+    onAuditLog(
+      'AI_PETITION_LETTER_SCANNED',
+      `Auto-scanned petition letter for ${data.citizenName || 'citizen'} via Gemini AI`
+    );
+  };
 
   // Action / Status Update Form state
   const [actionStatus, setActionStatus] = useState<PetitionStatus>('INQUIRY');
@@ -222,6 +250,8 @@ export const PublicPetitionsView: React.FC<PublicPetitionsViewProps> = ({
       priority: formPriority,
       assignedOfficer: currentUser.name,
       assignedOfficerRole: currentUser.role,
+      letterPhotoUrl: scannedLetterPreview || undefined,
+      scannedViaAi: !!scannedLetterPreview,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -242,6 +272,7 @@ export const PublicPetitionsView: React.FC<PublicPetitionsViewProps> = ({
     setFormPhone('');
     setFormAddress('');
     setFormTokenNo('');
+    setScannedLetterPreview(null);
     setShowAddModal(false);
   };
 
@@ -338,11 +369,18 @@ export const PublicPetitionsView: React.FC<PublicPetitionsViewProps> = ({
             <span>{lang === 'ta' ? 'அறிக்கை அச்சிடுக' : 'Print Register'}</span>
           </button>
           <button
+            onClick={() => setShowScannerModal(true)}
+            className="px-4 py-2 text-xs font-bold rounded-lg bg-gradient-to-r from-emerald-800 to-amber-700 hover:from-emerald-900 hover:to-amber-800 text-white transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+          >
+            <Camera className="w-4 h-4 text-amber-300" />
+            <span>{lang === 'ta' ? '📷 கடிதத்தை ஸ்கான் செய் (AI)' : '📷 Scan Letter (AI)'}</span>
+          </button>
+          <button
             onClick={() => setShowAddModal(true)}
             className="px-4 py-2 text-xs font-bold rounded-lg bg-amber-700 hover:bg-amber-800 text-white transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>{lang === 'ta' ? 'புதிய கோரிக்கை / முறைப்பாடு பதிவு' : 'Register New Petition'}</span>
+            <span>{lang === 'ta' ? 'புதிய மனு பதிவு' : 'Register New Petition'}</span>
           </button>
         </div>
       </div>
@@ -541,6 +579,16 @@ export const PublicPetitionsView: React.FC<PublicPetitionsViewProps> = ({
                         <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5 leading-relaxed" title={p.description}>
                           {p.description}
                         </p>
+                        {p.letterPhotoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setViewingLetterPhoto(p.letterPhotoUrl!)}
+                            className="mt-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300 inline-flex items-center gap-1 cursor-pointer transition-colors"
+                          >
+                            <Camera className="w-3 h-3 text-emerald-700" />
+                            <span>{lang === 'ta' ? 'அசல் கடிதப் படம்' : 'View Scanned Letter'}</span>
+                          </button>
+                        )}
                       </td>
 
                       <td className="py-3 px-4">
@@ -653,6 +701,73 @@ export const PublicPetitionsView: React.FC<PublicPetitionsViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveNewPetition} className="overflow-y-auto p-4 sm:p-6 space-y-4 text-xs">
+              {/* AI Letter Scanner Trigger Banner */}
+              <div className="p-3 bg-gradient-to-r from-emerald-50 via-amber-50 to-emerald-50 border-2 border-dashed border-emerald-400 rounded-xl flex items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                    <Camera className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      <span>{lang === 'ta' ? 'கடிதத்தை போட்டோ பிடித்து தானாக நிரப்புக' : 'Auto-Fill from Letter Photo'}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      {lang === 'ta'
+                        ? 'மனுதாரரின் கடிதத்தை கேமராவில் படம் பிடித்தவுடன் பெயர், NIC, தலைப்பு தானாக நிரப்பப்படும்.'
+                        : 'Snap or upload letter photo to auto-extract details via Gemini AI.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowScannerModal(true)}
+                  className="px-3.5 py-2 bg-gradient-to-r from-emerald-800 to-amber-700 hover:from-emerald-900 hover:to-amber-800 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0 transition-transform active:scale-95"
+                >
+                  <Camera className="w-3.5 h-3.5 text-amber-300" />
+                  <span>{lang === 'ta' ? '📷 ஸ்கான் செய்' : '📷 Scan Letter'}</span>
+                </button>
+              </div>
+
+              {/* Scanned Letter Photo Thumbnail Preview (if attached) */}
+              {scannedLetterPreview && (
+                <div className="flex items-center justify-between p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={scannedLetterPreview}
+                      alt="Scanned letter"
+                      className="w-12 h-12 object-cover rounded-lg border border-emerald-400 cursor-pointer shadow-xs"
+                      onClick={() => setViewingLetterPhoto(scannedLetterPreview)}
+                    />
+                    <div>
+                      <div className="font-bold text-emerald-950 text-xs flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{lang === 'ta' ? 'அசல் கடிதப் பிரதி இணைக்கப்பட்டுள்ளது' : 'Scanned Letter Attached'}</span>
+                      </div>
+                      <div className="text-[10px] text-emerald-700 mt-0.5">
+                        {lang === 'ta' ? 'AI மூலம் வாசிக்கப்பட்டு விபரங்கள் நிரப்பப்பட்டுள்ளன' : 'Data extracted via Gemini AI'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setViewingLetterPhoto(scannedLetterPreview)}
+                      className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-100 cursor-pointer"
+                    >
+                      {lang === 'ta' ? 'பெரிதாக்கு' : 'View'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScannedLetterPreview(null)}
+                      className="px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                    >
+                      {lang === 'ta' ? 'நீக்கு' : 'Remove'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">வகை (Petition Type) *</label>
@@ -1066,6 +1181,61 @@ export const PublicPetitionsView: React.FC<PublicPetitionsViewProps> = ({
                 <Printer className="w-4 h-4" />
                 <span>அச்சிடுக</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Petition Letter AI Scanner (Camera / Upload) */}
+      <PetitionLetterScannerModal
+        isOpen={showScannerModal}
+        onClose={() => setShowScannerModal(false)}
+        onApplyData={handleApplyScannedData}
+        divisions={divisions}
+        lang={lang}
+      />
+
+      {/* Lightbox Modal: View Scanned Original Letter Photo */}
+      {viewingLetterPhoto && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/90 p-3 sm:p-5 flex justify-center items-center">
+          <div className="relative max-w-4xl w-full max-h-[92vh] flex flex-col items-center bg-slate-900 rounded-2xl overflow-hidden border border-slate-700 shadow-2xl">
+            <div className="w-full flex items-center justify-between p-3.5 bg-slate-950 text-white shrink-0 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-amber-400" />
+                <h3 className="text-xs sm:text-sm font-bold">
+                  {lang === 'ta' ? 'மனுதாரரின் அசல் கடித ஆவணம் (Scanned Citizen Letter)' : 'Scanned Original Citizen Petition'}
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const printWindow = window.open('', '_blank');
+                    if (printWindow) {
+                      printWindow.document.write(`<img src="${viewingLetterPhoto}" style="max-width:100%; height:auto;" onload="window.print();" />`);
+                      printWindow.document.close();
+                    }
+                  }}
+                  className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>{lang === 'ta' ? 'அச்சிடு' : 'Print'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewingLetterPhoto(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto p-4 flex items-center justify-center max-h-[82vh] w-full">
+              <img
+                src={viewingLetterPhoto}
+                alt="Citizen Letter"
+                className="max-h-[78vh] w-auto object-contain rounded-lg shadow-lg border border-slate-700"
+              />
             </div>
           </div>
         </div>

@@ -685,6 +685,9 @@ export interface PublicPetition {
   resolutionDecision?: string;
   resolvedDate?: string;
   resolvedBy?: string;
+  letterPhotoUrl?: string; // Captured photo / uploaded image of the citizen petition letter
+  scannedViaAi?: boolean;
+  aiExtractionNotes?: string;
   createdAt: string;
   updatedAt: string;
 }

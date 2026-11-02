@@ -40,15 +40,15 @@ export default function handler(req: any, res: any) {
     return res.status(200).json({
       success: true,
       initialized: true,
-      mode: 'vercel_serverless',
+      mode: 'express_central',
       counts,
-      message: 'Vercel API running with Cloud Drive & Local Sync active',
+      message: 'Central API running with Cloud Drive & Local Sync active',
     });
   } catch (err: any) {
     return res.status(200).json({
       success: true,
       initialized: true,
-      mode: 'vercel_serverless_fallback',
+      mode: 'express_fallback',
       counts: { citizens: 0, tokens: 0, users: 0 },
       message: err.message,
     });

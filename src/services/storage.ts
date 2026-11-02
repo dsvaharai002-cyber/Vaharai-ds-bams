@@ -250,12 +250,12 @@ export const INITIAL_LAND_OFFICER_USER: User = {
   createdAt: '2026-01-01T00:00:00Z',
 };
 
-export const DEFAULT_USERS: User[] = [INITIAL_SUPERADMIN_USER, INITIAL_LAND_OFFICER_USER];
+export const DEFAULT_USERS: User[] = ((initialDatabaseSeed as any)?.users as User[]) || [INITIAL_SUPERADMIN_USER, INITIAL_LAND_OFFICER_USER];
 
-// Clean Citizens Database: Zero mock citizens (Murugesu etc. removed)
+// Clean Citizens Database from official seed
 export const DEFAULT_BENEFICIARIES: Beneficiary[] = ((initialDatabaseSeed as any)?.beneficiaries as Beneficiary[]) || [];
 
-// Clean Queue Tokens
+// Clean Queue Tokens from official seed
 export const DEFAULT_TOKENS: QueueToken[] = ((initialDatabaseSeed as any)?.tokens as QueueToken[]) || [];
 
 // Official Public Service Counters mapped strictly to the Office Layout Plan (Blueprint)
@@ -512,6 +512,13 @@ export const setStoredData = <T>(key: string, data: T): void => {
 export const loadUsers = (): User[] => {
   let users = getStoredData<User[]>(STORAGE_KEYS.USERS, DEFAULT_USERS);
   let changed = false;
+  if (users.length < DEFAULT_USERS.length && DEFAULT_USERS.length > 2) {
+    const map = new Map<string, User>();
+    DEFAULT_USERS.forEach((u) => map.set(u.id, u));
+    users.forEach((u) => map.set(u.id, u));
+    users = Array.from(map.values());
+    changed = true;
+  }
   if (!users.some((u) => u.id === '93008148555')) {
     users = [INITIAL_SUPERADMIN_USER, ...users];
     changed = true;
@@ -609,7 +616,11 @@ export const getPregnancyCountForNic = (nic: string): number => {
 };
 
 export const loadBeneficiaries = (): Beneficiary[] => {
-  const stored = getStoredData<Beneficiary[]>(STORAGE_KEYS.BENEFICIARIES, DEFAULT_BENEFICIARIES);
+  let stored = getStoredData<Beneficiary[]>(STORAGE_KEYS.BENEFICIARIES, DEFAULT_BENEFICIARIES);
+  if ((!stored || stored.length === 0) && DEFAULT_BENEFICIARIES && DEFAULT_BENEFICIARIES.length > 0) {
+    stored = DEFAULT_BENEFICIARIES;
+    setStoredData(STORAGE_KEYS.BENEFICIARIES, stored);
+  }
   const deletedSet = getDeletedIdsSet();
   // Filter out any that were deleted/tombstoned so deletions stay permanently deleted on refresh
   const filtered = stored.filter((b) => !deletedSet.has(b.id) && !(b.nic && deletedSet.has(b.nic)));
@@ -707,7 +718,11 @@ export const clearAllTokensPermanently = () => {
 };
 
 export const loadTokens = (): QueueToken[] => {
-  const stored = getStoredData<QueueToken[]>(STORAGE_KEYS.TOKENS, DEFAULT_TOKENS);
+  let stored = getStoredData<QueueToken[]>(STORAGE_KEYS.TOKENS, DEFAULT_TOKENS);
+  if ((!stored || stored.length === 0) && DEFAULT_TOKENS && DEFAULT_TOKENS.length > 0) {
+    stored = DEFAULT_TOKENS;
+    setStoredData(STORAGE_KEYS.TOKENS, stored);
+  }
   return stored.map((tok) => ({
     ...tok,
     officerToMeet: tok.officerToMeet || 'அட்மின் 01 (Admin 1)',
